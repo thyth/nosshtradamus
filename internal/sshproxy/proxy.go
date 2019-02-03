@@ -98,7 +98,6 @@ func handleSshClientChannels(proxyConn *ssh.Client, client *ssh.ServerConn, nc <
 }
 
 func handleSshClientChannel(proxyConn *ssh.Client, _ *ssh.ServerConn, request ssh.NewChannel) {
-	fmt.Println(request.ChannelType())
 	proxyChan, proxyReqs, err := proxyConn.OpenChannel(request.ChannelType(), request.ExtraData())
 	if err != nil {
 		if openChanErr, ok := err.(*ssh.OpenChannelError); ok {
@@ -114,14 +113,32 @@ func handleSshClientChannel(proxyConn *ssh.Client, _ *ssh.ServerConn, request ss
 		return
 	}
 
+	clientClosed := make(chan interface{})
+	serverClosed := make(chan interface{})
+
 	// copy data across both channels
-	go io.Copy(proxyChan, clientChan)
-	go io.Copy(clientChan, proxyChan)
+	go func() {
+		io.Copy(proxyChan, clientChan) // client closed connection for channel writes
+		proxyChan.CloseWrite()
+		close(clientClosed)
+	}()
+	go func() {
+		io.Copy(clientChan, proxyChan) // server closed connection for channel writes
+		clientChan.CloseWrite()
+		close(serverClosed)
+	}()
 
-	go reflectRequests(clientChan, proxyReqs)
-	go reflectRequests(proxyChan, clientReqs)
-
-	// TODO close up when either end terminates
+	// copy requests across both channels
+	go func() {
+		reflectRequests(proxyChan, clientReqs) // client closed connection for channel requests
+		<-clientClosed
+		proxyChan.Close()
+	}()
+	go func() {
+		reflectRequests(clientChan, proxyReqs) // server closed connection for channel requests
+		<-serverClosed
+		clientChan.Close()
+	}()
 }
 
 func reflectRequests(recipient ssh.Channel, sender <-chan *ssh.Request) {
@@ -131,7 +148,10 @@ func reflectRequests(recipient ssh.Channel, sender <-chan *ssh.Request) {
 			if err != nil {
 				request.Reply(false, nil)
 			} else {
-				request.Reply(reply, nil) // TODO where to get response payload?
+				// Note: (at least in the Go x.crypto SSH library) payload argument is ignored for channel-specific
+				//       requests. This behavior appears to be defined in RFC4254 section 5.4, where clients can send
+				//       multiple messages without waiting for responses.
+				request.Reply(reply, nil)
 			}
 		}
 	}
