@@ -86,7 +86,9 @@ func DumbTransparentProxy(port int, target net.Addr) error {
 		if err != nil {
 			continue
 		}
-		go ssh.DiscardRequests(reqs)
+		// reflect connection level requests from the client; can the server initiate such requests, or just reply?
+		go reflectGlobalRequests(proxyConn, reqs)
+
 		handleSshClientChannels(proxyConn, sshConn, chans)
 	}
 }
@@ -152,6 +154,19 @@ func reflectRequests(recipient ssh.Channel, sender <-chan *ssh.Request) {
 				//       requests. This behavior appears to be defined in RFC4254 section 5.4, where clients can send
 				//       multiple messages without waiting for responses.
 				request.Reply(reply, nil)
+			}
+		}
+	}
+}
+
+func reflectGlobalRequests(recipient ssh.Conn, sender <-chan *ssh.Request) {
+	for request := range sender {
+		reply, payload, err := recipient.SendRequest(request.Type, request.WantReply, request.Payload)
+		if request.WantReply {
+			if err != nil {
+				request.Reply(false, nil)
+			} else {
+				request.Reply(reply, payload)
 			}
 		}
 	}
