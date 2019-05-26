@@ -10,8 +10,10 @@ import (
 	"time"
 )
 
+type HostKeyProvider func() (ssh.Signer, error)
+
 // create a new SSH host key
-func genHostKey() (ssh.Signer, error) {
+func GenHostKey() (ssh.Signer, error) {
 	_, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, err
@@ -20,7 +22,7 @@ func genHostKey() (ssh.Signer, error) {
 }
 
 // connect to any SSH server without checking the host key
-func acceptAllHostKeys(_ string, _ net.Addr, _ ssh.PublicKey) error {
+func AcceptAllHostKeys(_ string, _ net.Addr, _ ssh.PublicKey) error {
 	return nil
 }
 
@@ -35,30 +37,30 @@ func blankInteractive(_, _ string, questions []string, _ []bool) ([]string, erro
 
 var (
 	defaultTimeout     = 3 * time.Second
-	defaultAuthMethods = []ssh.AuthMethod{
+	DefaultAuthMethods = []ssh.AuthMethod{
 		ssh.Password(""),
 		ssh.KeyboardInteractive(blankInteractive),
 	}
 )
 
-func DumbTransparentProxy(port int, target net.Addr) error {
-	var proxyConn *ssh.Client
+// A ChannelStreamFilter optionally encapsulates/wraps an SSH channel of the specified channel type.
+type ChannelStreamFilter func(channelType string, c ssh.Channel) io.ReadWriteCloser
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return err
-	}
+func RunProxy(listener net.Listener, keyProvider HostKeyProvider, target net.Addr, auth []ssh.AuthMethod,
+	keyCallback ssh.HostKeyCallback, filter ChannelStreamFilter) error {
+	var proxyConn *ssh.Client
 	config := &ssh.ServerConfig{
+		// Note: To make this usable as a generic client-side wrapper for the 'ssh' binary, need to add key and password
+		//       authentication mechanisms, local agent forwarding, et cetra.
 		KeyboardInteractiveCallback: func(conn ssh.ConnMetadata,
 			challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
-
 			user := conn.User()
-			// try connecting to the remote host at proxy challenge authentication time
+			// connecting to the remote host only when the proxy has enough information to make the connection
 			clientConn, err := ssh.Dial("tcp", target.String(), &ssh.ClientConfig{
 				User:            user,
 				Timeout:         defaultTimeout,
-				HostKeyCallback: acceptAllHostKeys,
-				Auth:            defaultAuthMethods,
+				HostKeyCallback: keyCallback,
+				Auth:            auth,
 			})
 			if err != nil {
 				return nil, err
@@ -66,67 +68,89 @@ func DumbTransparentProxy(port int, target net.Addr) error {
 			proxyConn = clientConn
 
 			// send blank challenge so that the user is not prompted to authenticate
-			challenge(user, "", []string{}, []bool{})
+			_, _ = challenge(user, "", []string{}, []bool{})
 			return nil, nil
 		},
 	}
-	hostKey, err := genHostKey()
+	hostKey, err := keyProvider()
 	if err != nil {
 		return err
 	}
 	config.AddHostKey(hostKey)
 
 	for {
-		// accept exactly one connection at a time
 		conn, err := listener.Accept()
 		if err != nil {
 			continue
 		}
+
 		sshConn, chans, reqs, err := ssh.NewServerConn(conn, config)
 		if err != nil {
 			continue
 		}
-		// reflect connection level requests from the client; can the server initiate such requests, or just reply?
-		go reflectGlobalRequests(proxyConn, reqs)
+		func(proxyConn *ssh.Client, sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) {
+			// reflect connection level requests from the client; can the server initiate such requests, or just reply?
+			go reflectGlobalRequests(proxyConn, reqs)
 
-		handleSshClientChannels(proxyConn, sshConn, chans)
+			handleSshClientChannels(proxyConn, sshConn, chans, filter)
+		}(proxyConn, sshConn, chans, reqs)
 	}
 }
 
-func handleSshClientChannels(proxyConn *ssh.Client, client *ssh.ServerConn, nc <-chan ssh.NewChannel) {
+func DumbTransparentProxy(port int, target net.Addr) error {
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return err
+	}
+	return RunProxy(listener, GenHostKey, target, DefaultAuthMethods, AcceptAllHostKeys, nil)
+}
+
+func handleSshClientChannels(proxyConn *ssh.Client, client *ssh.ServerConn, nc <-chan ssh.NewChannel,
+	filter ChannelStreamFilter) {
 	for channelRequest := range nc {
-		go handleSshClientChannel(proxyConn, client, channelRequest)
+		go handleSshClientChannel(proxyConn, client, channelRequest, filter)
 	}
 }
 
-func handleSshClientChannel(proxyConn *ssh.Client, _ *ssh.ServerConn, request ssh.NewChannel) {
-	proxyChan, proxyReqs, err := proxyConn.OpenChannel(request.ChannelType(), request.ExtraData())
+func handleSshClientChannel(proxyConn *ssh.Client, _ *ssh.ServerConn, request ssh.NewChannel,
+	filter ChannelStreamFilter) {
+
+	chanType := request.ChannelType()
+	proxyChan, proxyReqs, err := proxyConn.OpenChannel(chanType, request.ExtraData())
 	if err != nil {
 		if openChanErr, ok := err.(*ssh.OpenChannelError); ok {
-			request.Reject(openChanErr.Reason, openChanErr.Message)
+			_ = request.Reject(openChanErr.Reason, openChanErr.Message)
 		} else {
-			request.Reject(ssh.ConnectionFailed, err.Error())
+			_ = request.Reject(ssh.ConnectionFailed, err.Error())
 		}
 	}
 
 	clientChan, clientReqs, err := request.Accept()
 	if err != nil {
-		proxyChan.Close()
+		_ = proxyChan.Close()
 		return
 	}
 
 	clientClosed := make(chan interface{})
 	serverClosed := make(chan interface{})
 
+	var copyTarget io.ReadWriteCloser
+	if filter != nil {
+		copyTarget = filter(chanType, proxyChan)
+	}
+	if copyTarget == nil {
+		copyTarget = proxyChan
+	}
+
 	// copy data across both channels
 	go func() {
-		io.Copy(proxyChan, clientChan) // client closed connection for channel writes
-		proxyChan.CloseWrite()
+		_, _ = io.Copy(copyTarget, clientChan) // client closed connection for channel writes
+		_ = proxyChan.CloseWrite()
 		close(clientClosed)
 	}()
 	go func() {
-		io.Copy(clientChan, proxyChan) // server closed connection for channel writes
-		clientChan.CloseWrite()
+		_, _ = io.Copy(clientChan, copyTarget) // server closed connection for channel writes
+		_ = clientChan.CloseWrite()
 		close(serverClosed)
 	}()
 
@@ -134,12 +158,15 @@ func handleSshClientChannel(proxyConn *ssh.Client, _ *ssh.ServerConn, request ss
 	go func() {
 		reflectRequests(proxyChan, clientReqs) // client closed connection for channel requests
 		<-clientClosed
-		proxyChan.Close()
+		_ = proxyChan.Close()
+		if copyTarget != proxyChan {
+			_ = copyTarget.Close()
+		}
 	}()
 	go func() {
 		reflectRequests(clientChan, proxyReqs) // server closed connection for channel requests
 		<-serverClosed
-		clientChan.Close()
+		_ = clientChan.Close()
 	}()
 }
 
@@ -148,12 +175,12 @@ func reflectRequests(recipient ssh.Channel, sender <-chan *ssh.Request) {
 		reply, err := recipient.SendRequest(request.Type, request.WantReply, request.Payload)
 		if request.WantReply {
 			if err != nil {
-				request.Reply(false, nil)
+				_ = request.Reply(false, nil)
 			} else {
 				// Note: (at least in the Go x.crypto SSH library) payload argument is ignored for channel-specific
 				//       requests. This behavior appears to be defined in RFC4254 section 5.4, where clients can send
 				//       multiple messages without waiting for responses.
-				request.Reply(reply, nil)
+				_ = request.Reply(reply, nil)
 			}
 		}
 	}
@@ -164,9 +191,9 @@ func reflectGlobalRequests(recipient ssh.Conn, sender <-chan *ssh.Request) {
 		reply, payload, err := recipient.SendRequest(request.Type, request.WantReply, request.Payload)
 		if request.WantReply {
 			if err != nil {
-				request.Reply(false, nil)
+				_ = request.Reply(false, nil)
 			} else {
-				request.Reply(reply, payload)
+				_ = request.Reply(reply, payload)
 			}
 		}
 	}

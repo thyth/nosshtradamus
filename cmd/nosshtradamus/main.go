@@ -31,6 +31,9 @@ func main() {
 	if addr, err := net.ResolveTCPAddr("tcp", target); err != nil {
 		panic(err)
 	} else {
-		sshproxy.DumbTransparentProxy(port, addr)
+		err = sshproxy.DumbTransparentProxy(port, addr)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
