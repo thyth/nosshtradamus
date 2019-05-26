@@ -88,11 +88,13 @@ func RunProxy(listener net.Listener, keyProvider HostKeyProvider, target net.Add
 		if err != nil {
 			continue
 		}
-		func(proxyConn *ssh.Client, sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) {
+		go func(proxyConn *ssh.Client, sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) {
 			// reflect connection level requests from the client; can the server initiate such requests, or just reply?
 			go reflectGlobalRequests(proxyConn, reqs)
 
 			handleSshClientChannels(proxyConn, sshConn, chans, filter)
+
+			_ = proxyConn.Close()
 		}(proxyConn, sshConn, chans, reqs)
 	}
 }
