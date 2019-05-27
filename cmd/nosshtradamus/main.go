@@ -55,7 +55,7 @@ func main() {
 					wrapped = predictive.Delay(wrapped, fakeDelay)
 				}
 				if !noPrediction {
-					wrapped = predictive.Interpose(wrapped)
+					wrapped = predictive.Interpose(wrapped, predictive.DefaultCoalesceInterval, 80, 24)
 				}
 
 				if wrapped == sshChannel {
