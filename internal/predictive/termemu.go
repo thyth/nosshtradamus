@@ -176,7 +176,12 @@ func (i *Interposer) Read(p []byte) (int, error) {
 	}
 	n, err := i.upstream.Read(i.upstreamBuffer)
 	if err != nil {
-		n = copy(p, i.upstreamBuffer)
+		n = copy(p, i.upstreamBuffer[:n])
+		if err == io.EOF {
+			// on EOF, send terminal close data too
+			closeData := []byte(i.display.Close())
+			copy(p[n:], closeData)
+		}
 		return n, err
 	}
 
@@ -193,7 +198,7 @@ func (i *Interposer) Read(p []byte) (int, error) {
 	newFrame := i.emulator.GetFramebuffer()
 	emission := []byte(i.display.NewFrame(i.initialized, i.state, newFrame))
 	i.initialized = true
-	i.state = newFrame // TODO does this leak memory?
+	i.state = terminal.CopyFramebuffer(newFrame) // TODO does this leak memory?
 
 	n = copy(p, emission)
 	if n < len(emission) {
