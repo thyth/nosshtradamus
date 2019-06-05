@@ -102,6 +102,35 @@ type Interposer struct {
 //     framebuffer instances returned from it).
 //   - TODO This method of retrieving Terminal::Framebuffer instances from Terminal::Complete suggests callee memory
 //     TODO ownership. Need to double check to see if the current (v0.1.1) go-mosh implementation leaks memory.
+//     - FIXME: Probably not leaking memory, since the emulator's framebuffer seems lifetime bound to the emulator?
+//
+// - The 'benchmark.cc' example program uses the Overlay::OverlayManager along with a similar setup of a
+//   Terminal::Complete, (pair of) Terminal::Framebuffer, and Terminal::Display to benchmark the performance of a
+//   prediction application of a "user byte" and the generation of Display diffs -- the core operations.
+//   - Unlike the 'termemu.cc' example, this is not hooked up to be a faithful terminal emulator.
+//   - Instead of wrapping the Overlay::OverlayManager, in go-mosh, I wrapped the underlying Overlay::PredictionEngine.
+//     The OverlyManager itself wraps 3 independent pieces of functionality: title injection, a message overlay bar, and
+//     the prediction engine. When .apply(...) is called on the OverlayManager (like in 'benchmark.cc'), it effectively
+//     calls a .apply(...) function on each of those independent pieces. Since the other two classes are not necessary
+//     for the predictive terminal emulator task, they are not wrapped by go-mosh.
+//   - At each iteration, a "random" user byte is applied to the prediction engine via .new_user_byte(...). This call
+//     takes both the byte being applied (i.e. the effect of a user keystroke in normal operation), *and* it also takes
+//     a reference to the "local_framebuffer" Terminal::Framebuffer instance.
+//     - Presumably this operation mutates the state of that Framebuffer.
+//   - After "typing" a character, the current framebuffer is gathered from the terminal emulator instance. Note that
+//     there are no direct calls to .apply(<action>) or .apply(<string>) [called .Perform(...) in go-mosh] on the
+//     emulator.
+//     - This framebuffer is reference stored in new_state, one of the two framebuffer slots created by 'benchmark.cc'.
+//   - Next, the overlay is applied to the framebuffer state just retrieved from the terminal emulator.
+//     - Mechanically, this .apply(...) call should be doable directly to the prediction engine rather than the overlay
+//       manager, and the correct functionality should be invoked.
+//     - Presumably this operation mutates the framebuffer state retrieved from the terminal emulator.
+//       - This seems to be the only linkage in this example program between a Terminal::Complete instance and an
+//         Overlay::PredictionEngine.
+//   - Finally, a delta is computed between the "front" and "back" framebuffers, and then this delta is discarded.
+// - Unfortunately, since the 'benchmark.cc' program is so stripped down, it doesn't look like a great example for
+//   learning and understanding the flow of data in the context of a more realistic terminal emulator scenario. May need
+//   to look at how this is used in other parts of the Mosh code before it will be clear.
 
 func Interpose(rwc io.ReadWriteCloser, coalesceInterval time.Duration, width, height int) *Interposer {
 	return &Interposer{
