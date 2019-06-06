@@ -16,6 +16,13 @@ import (
 // a single delta by Mosh. Using 60 frames per second.
 const DefaultCoalesceInterval = time.Second / 60
 
+// DefaultDisplayPreference specifies the default prediction mode. Using "experimental", as it is the most aggressive.
+const DefaultDisplayPreference = overlay.PredictExperimental
+
+// DefaultDisplayPredictOverwrites specifies if the prediction should include character overwrite predictions. Enabling
+// for greater prediction aggression.
+const DefaultDisplayPredictOverwrites = true
+
 // Mosh (Mobile Shell) implements a terminal emulator capable of predictive/speculative echo and line editing for
 // interactive sessions. These predictions are displayed to the user effectively immediately in response to input,
 // without waiting for the remote server to echo back output. The server responses are used to confirm and correct these
@@ -131,6 +138,71 @@ type Interposer struct {
 // - Unfortunately, since the 'benchmark.cc' program is so stripped down, it doesn't look like a great example for
 //   learning and understanding the flow of data in the context of a more realistic terminal emulator scenario. May need
 //   to look at how this is used in other parts of the Mosh code before it will be clear.
+//
+// - As an alternative to looking at 'benchmark.cc', the Mosh client implementation in 'stmclient.h' and 'stmclient.cc'
+//   is where this logic is actually used in the full system.
+//   - It has network transport, connection, and data stream logic that is not relevant to this project, but also all
+//     of the pieces composed in the 'benchmark.cc' example.
+//   - There is a pair of Terminal::Framebuffer instances (local_framebuffer, new_state), a Terminal::Display, and an
+//     Overlay::OverlayManager. It also tracks termios data and window dimensions, and a few variables for escape
+//     sequence state transitions.
+//   - The (constructor) initial framebuffers are created as 1x1 width/height.
+//   - In addition to the prediction engine display preference setting (always/never/adaptive/experimental), there is a
+//     separate boolean setting controlling whether the prediction engine should predict overwrites. Presumably the most
+//     aggressive prediction setting is experimental display preference with overwrite prediction enabled.
+//   - A comment indicates that Terminal::Display initialization with boolean true looks at the TERM environment
+//     variable for capability and correct terminal initialization data.
+//   - There are 5 private member functions on STMClient of strong interest:
+//     - void main_init(void):
+//       - Called by public .main() member function.
+//       - Initializes signal handlers and auxiliary structures.
+//       - Determines the size of the host terminal, allocates a new local_framebuffer of those dimensions.
+//       - Allocates a 1x1 framebuffer for new_state -- presumably discarded before used.
+//       - Initializes the host terminal by calling display.new_frame(false, local_framebuffer, local_framebuffer).
+//       - Tells the remote server of the size of the host terminal. Presumably this translates into a call to apply a
+//         Parser::Resize instance on a Terminal::Complete instance on the remote end.
+//       - Returns to STMClient::Main, which starts a loop-select over:
+//         - Receiving data from the network, calling process_network_input()
+//         - Reading from the host terminal via the STDIN fd, calling process_user_input(STDIN), and if a false value is
+//           returned, it checks to see if the network connection is lost or intentionally closed.
+//         - Catching SIGWINCH for host terminal resizing, calling process_resize(), and if a false value is returned,
+//           it aborts the loop.
+//         - Several other cases covering SIGTERM/SIGINT/SIGHUP/SIGPIPE, SIGCONT, and a variety of networking/crypto
+//           failure/reconnection cases.
+//     - void process_network_input(void):
+//       - Calls network->recv() -- likely effectively equivalent to calling terminal.Complete.Perform(<data>), per the
+//         'termemu.cc' example already dissected before this.
+//       - Provides timestamp and send interval data to the prediction engine by calls to set_local_frame_acked,
+//         set_send_interval, and set_local_frame_late_acked. May need to experiment here?
+//       - Does not appear to be a direct connection between the overlay/prediction engine and data in this function.
+//     - bool process_user_input(int fd):
+//       - Reads up to 16K at a time from STDIN.
+//       - Notifies the prediction engine with set_local_frame_sent(net.get_sent_state_last()). Needs experiment here?
+//       - If more than 100 bytes are read, it's considered a "paste" operation, and the prediction engine is reset.
+//         - Presumably for speed/expediency reasons? Probably will disable this logic in this implementation.
+//       - In a loop, each byte is consumed in two places:
+//         - A call to .new_user_byte(<byte>, local_framebuffer) -- unless "pasting"
+//         - Creation and transmission of a new Parser::UserByte over the network to the remote terminal. This should
+//           be equivalent to calling .act(...) with that Parser::UserByte on a Terminal::Complete instance.
+//       - A bunch of logic runs for Mosh's local escape sequence handling, which is irrelevant here.
+//     - bool process_resize(void):
+//       - Gets the current terminal dimensions and sends a Parser::Resize event over the network connection (similar to
+//         the behavior of sending size in main_init).
+//       - Suggests that the remote end will probably reply with its own resize event so that local state gets updated.
+//       - Calls .reset() on the prediction engine. Apparently the effects of a resize are not predicable by Mosh.
+//       - Only returns false if it fails to retrieve the host terminal dimensions (which should never happen here).
+//     - void output_new_frame(void):
+//       - Retrieves the latest remote state from the network object. Likely equivalent to calling .get_fb() on a
+//         Terminal::Complete instance. Assigns it to 'new_state' instance Terminal::Framebuffer reference.
+//       - Invokes overlay.apply(new_state) to apply the effects of the prediction engine (and other overlays) to that
+//         framebuffer.
+//       - Calculates a delta terminal update string between local_framebuffer and this new_state including the locally
+//         applied overlays. The first init flag can be set to false if a redraw has been requested. Presumably this
+//         sends terminal reset codes and draws the terminal from scratch. The redraw request flag is then cleared.
+//       - The delta update string is written to STDOUT (the host terminal), and local_framebuffer is overwritten with
+//         new_state. Presumably this requires a clone call to terminal.CopyFramebuffer(...) in Golang.
+//   - The purpose of Terminal::Display.open() is described as "Put terminal in application-cursor-key mode".
+//   - The purpose of Terminal::Display.close() is described as "Restore terminal and terminal-driver state".
 
 func Interpose(rwc io.ReadWriteCloser, coalesceInterval time.Duration, width, height int) *Interposer {
 	return &Interposer{
