@@ -44,7 +44,13 @@ var (
 )
 
 // A ChannelStreamFilter optionally encapsulates/wraps an SSH channel of the specified channel type.
-type ChannelStreamFilter func(channelType string, c ssh.Channel) io.ReadWriteCloser
+type ChannelStreamFilter func(channelType string, c ssh.Channel) (io.ReadWriteCloser, ChannelRequestFilter)
+
+// A ChannelRequestSink encapsulates a channel of SSH requests being sent to a recipient channel.
+type ChannelRequestSink func(recipient ssh.Channel, sender <-chan *ssh.Request)
+
+// A ChannelRequestFilter takes one request sink and outputs one that may watch, filter, transform those requests.
+type ChannelRequestFilter func(sink ChannelRequestSink) ChannelRequestSink
 
 func RunProxy(listener net.Listener, keyProvider HostKeyProvider, target net.Addr, auth []ssh.AuthMethod,
 	keyCallback ssh.HostKeyCallback, filter ChannelStreamFilter) error {
@@ -137,11 +143,16 @@ func handleSshClientChannel(proxyConn *ssh.Client, _ *ssh.ServerConn, request ss
 	serverClosed := make(chan interface{})
 
 	var copyTarget io.ReadWriteCloser
+	var requestFilter ChannelRequestFilter
 	if filter != nil {
-		copyTarget = filter(chanType, proxyChan)
+		copyTarget, requestFilter = filter(chanType, proxyChan)
 	}
 	if copyTarget == nil {
 		copyTarget = proxyChan
+	}
+	var clientRequestSink ChannelRequestSink = reflectRequests
+	if requestFilter != nil {
+		clientRequestSink = requestFilter(clientRequestSink)
 	}
 
 	// copy data across both channels
@@ -158,7 +169,7 @@ func handleSshClientChannel(proxyConn *ssh.Client, _ *ssh.ServerConn, request ss
 
 	// copy requests across both channels
 	go func() {
-		reflectRequests(proxyChan, clientReqs) // client closed connection for channel requests
+		clientRequestSink(proxyChan, clientReqs) // client closed connection for channel requests
 		<-clientClosed
 		_ = proxyChan.Close()
 		if copyTarget != proxyChan {

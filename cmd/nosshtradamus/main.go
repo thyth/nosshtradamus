@@ -43,11 +43,11 @@ func main() {
 		return
 	}
 
-	// TODO need to expand channel stream filter to be able to generate request filters (to capture e.g. size changes)
 	var filter sshproxy.ChannelStreamFilter
 	if !noPrediction || fakeDelay > 0 {
-		filter = func(chanType string, sshChannel ssh.Channel) io.ReadWriteCloser {
+		filter = func(chanType string, sshChannel ssh.Channel) (io.ReadWriteCloser, sshproxy.ChannelRequestFilter) {
 			var wrapped io.ReadWriteCloser
+			var reqFilter sshproxy.ChannelRequestFilter
 
 			if chanType == "session" {
 				wrapped = sshChannel
@@ -55,7 +55,26 @@ func main() {
 					wrapped = predictive.Delay(wrapped, fakeDelay)
 				}
 				if !noPrediction {
-					wrapped = predictive.Interpose(wrapped, predictive.DefaultCoalesceInterval, 80, 24)
+					interposer := predictive.Interpose(wrapped, predictive.DefaultCoalesceInterval, 80, 24)
+					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
+						return func (recipient ssh.Channel, sender <-chan *ssh.Request) {
+							// capture and process a subset of requests prior to forwarding them
+							passthrough := make(chan *ssh.Request)
+							go sink(recipient, passthrough)
+							for request := range sender {
+								switch request.Type {
+								case "shell":
+									fmt.Println(request)
+								case "pty-req":
+									fmt.Println(request)
+								case "window-change":
+									fmt.Println(request)
+								}
+								passthrough <- request
+							}
+						}
+					}
+					wrapped = interposer
 				}
 
 				if wrapped == sshChannel {
@@ -63,7 +82,7 @@ func main() {
 				}
 			}
 
-			return wrapped
+			return wrapped, reqFilter
 		}
 	}
 
