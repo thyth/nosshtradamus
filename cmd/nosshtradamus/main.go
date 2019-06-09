@@ -66,9 +66,15 @@ func main() {
 								case "shell":
 									fmt.Println(request)
 								case "pty-req":
-									fmt.Println(request)
+									ptyreq, err := sshproxy.InterpretPtyReq(request.Payload)
+									if err == nil {
+										fmt.Println(ptyreq)
+									}
 								case "window-change":
-									fmt.Println(request)
+									winch, err := sshproxy.InterpretWindowChange(request.Payload)
+									if err == nil {
+										fmt.Println(winch)
+									}
 								}
 								passthrough <- request
 							}
