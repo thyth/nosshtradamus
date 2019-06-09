@@ -12,17 +12,6 @@ import (
 	"time"
 )
 
-// DefaultCoalesceInterval specifies the time interval within which multiple updates to the terminal are coalesced into
-// a single delta by Mosh. Using 60 frames per second.
-const DefaultCoalesceInterval = time.Second / 60
-
-// DefaultDisplayPreference specifies the default prediction mode. Using "experimental", as it is the most aggressive.
-const DefaultDisplayPreference = overlay.PredictExperimental
-
-// DefaultDisplayPredictOverwrites specifies if the prediction should include character overwrite predictions. Enabling
-// for greater prediction aggression.
-const DefaultDisplayPredictOverwrites = true
-
 // Mosh (Mobile Shell) implements a terminal emulator capable of predictive/speculative echo and line editing for
 // interactive sessions. These predictions are displayed to the user effectively immediately in response to input,
 // without waiting for the remote server to echo back output. The server responses are used to confirm and correct these
@@ -70,6 +59,28 @@ type Interposer struct {
 	predictor *overlay.PredictionEngine // speculative/predictive engine
 
 	opened, initialized bool
+}
+
+type InterposerOptions struct {
+	CoalesceInterval         time.Duration
+	DisplayPreference        overlay.DisplayPreference
+	DisplayPredictOverwrites bool
+}
+
+// GetDefaultInterposerOptions produces a set of reasonable defaults for the interposer's prediction and coalescing
+// parameters. Customize as needed in consumers of the interposer.
+func GetDefaultInterposerOptions() *InterposerOptions {
+	return &InterposerOptions{
+		// Specifies the time interval within which multiple updates to the terminal are coalesced into a single delta
+		// by Mosh. Default is 60 frames per second.
+		CoalesceInterval: time.Second / 60,
+
+		// Specifies the default prediction mode. Using "experimental", as it is the most aggressive.
+		DisplayPreference: overlay.PredictExperimental,
+
+		// Specifies if the prediction should include character overwrite predictions. Enabling for greater aggression.
+		DisplayPredictOverwrites: true,
+	}
 }
 
 // Notes:
@@ -208,29 +219,32 @@ type Interposer struct {
 //   - The purpose of Terminal::Display.open() is described as "Put terminal in application-cursor-key mode".
 //   - The purpose of Terminal::Display.close() is described as "Restore terminal and terminal-driver state".
 
-func Interpose(rwc io.ReadWriteCloser, coalesceInterval time.Duration, width, height int) *Interposer {
+func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 	inter := &Interposer{
 		upstream:    rwc,
 		upstreamErr: make(chan error),
 
-		coalesceInterval: coalesceInterval,
+		coalesceInterval: options.CoalesceInterval,
 
 		pending: nil,
 
-		width:  width,
-		height: height,
+		width:  1,
+		height: 1,
 
 		bufferMutex:   &sync.Mutex{},
 		emulatorMutex: &sync.Mutex{},
 
-		state:     terminal.MakeFramebuffer(width, height),
+		state:     terminal.MakeFramebuffer(1, 1),
 		display:   terminal.MakeDisplay(true),
-		emulator:  terminal.MakeComplete(width, height),
+		emulator:  terminal.MakeComplete(1, 1),
 		predictor: overlay.MakePredictionEngine(),
 
 		opened:      false,
 		initialized: false,
 	}
+	inter.predictor.SetDisplayPreference(options.DisplayPreference)
+	inter.predictor.SetPredictOverwrite(options.DisplayPredictOverwrites)
+
 	go inter.pullFromUpstream()
 	return inter
 }

@@ -55,7 +55,7 @@ func main() {
 					wrapped = predictive.Delay(wrapped, fakeDelay)
 				}
 				if !noPrediction {
-					interposer := predictive.Interpose(wrapped, predictive.DefaultCoalesceInterval, 1, 1)
+					interposer := predictive.Interpose(wrapped, predictive.GetDefaultInterposerOptions())
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
 						return func (recipient ssh.Channel, sender <-chan *ssh.Request) {
 							// capture and process a subset of requests prior to forwarding them
@@ -78,6 +78,7 @@ func main() {
 								}
 								passthrough <- request
 							}
+							close(passthrough)
 						}
 					}
 					wrapped = interposer
