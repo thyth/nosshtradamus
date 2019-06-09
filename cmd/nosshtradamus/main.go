@@ -55,7 +55,7 @@ func main() {
 					wrapped = predictive.Delay(wrapped, fakeDelay)
 				}
 				if !noPrediction {
-					interposer := predictive.Interpose(wrapped, predictive.DefaultCoalesceInterval, 80, 24)
+					interposer := predictive.Interpose(wrapped, predictive.DefaultCoalesceInterval, 1, 1)
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
 						return func (recipient ssh.Channel, sender <-chan *ssh.Request) {
 							// capture and process a subset of requests prior to forwarding them
@@ -64,16 +64,16 @@ func main() {
 							for request := range sender {
 								switch request.Type {
 								case "shell":
-									fmt.Println(request)
+									// do we need to enforce that pty-req has been requested before shell?
 								case "pty-req":
 									ptyreq, err := sshproxy.InterpretPtyReq(request.Payload)
 									if err == nil {
-										fmt.Println(ptyreq)
+										interposer.Resize(int(ptyreq.Width), int(ptyreq.Height))
 									}
 								case "window-change":
 									winch, err := sshproxy.InterpretWindowChange(request.Payload)
 									if err == nil {
-										fmt.Println(winch)
+										interposer.Resize(int(winch.Width), int(winch.Height))
 									}
 								}
 								passthrough <- request
