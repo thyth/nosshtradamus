@@ -40,6 +40,7 @@ func GetVersion() string {
 // local writes, and state read from the upstream.
 type Interposer struct {
 	upstream        io.ReadWriteCloser
+	upstreamAsynk   *Asynk
 	upstreamErr     chan error
 	lastUpstreamErr error
 	droppedUpdate   bool
@@ -223,8 +224,9 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 
 func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 	inter := &Interposer{
-		upstream:    rwc,
-		upstreamErr: make(chan error),
+		upstream:      rwc,
+		upstreamAsynk: MakeAsynk(rwc, 8192),
+		upstreamErr:   make(chan error),
 
 		coalesceInterval: options.CoalesceInterval,
 
@@ -406,7 +408,7 @@ func (i *Interposer) Write(p []byte) (int, error) {
 	i.predictor.LocalFrameSent(now) // TODO ???
 	for _, b := range p {
 		// TODO write new user bytes to predictor (and the selected framebuffer)
-		//i.predictor.NewUserByte(b, i.state)
+		i.predictor.NewUserByte(b, i.state)
 		s := i.emulator.Act(parser.MakeUserByte(int(b)))
 		terminalToHost.WriteString(s)
 	}
@@ -418,7 +420,7 @@ func (i *Interposer) Write(p []byte) (int, error) {
 		}
 	}
 	i.emulatorMutex.Unlock()
-	return i.upstream.Write(terminalToHost.Bytes())
+	return i.upstreamAsynk.Write(terminalToHost.Bytes())
 }
 
 // Change the width and height of the interposed terminal, in response to e.g. SIGWINCH or equivalent signal.
