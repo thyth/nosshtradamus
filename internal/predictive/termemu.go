@@ -58,6 +58,8 @@ type Interposer struct {
 	emulator  *terminal.Complete        // processor of terminal control sequences
 	predictor *overlay.PredictionEngine // speculative/predictive engine
 
+	predictionNotification chan interface{}
+
 	opened, initialized bool
 }
 
@@ -239,6 +241,8 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 		emulator:  terminal.MakeComplete(1, 1),
 		predictor: overlay.MakePredictionEngine(),
 
+		predictionNotification: make(chan interface{}),
+
 		opened:      false,
 		initialized: false,
 	}
@@ -286,6 +290,11 @@ func (i *Interposer) pullFromUpstream() {
 		if err != nil {
 			return
 		}
+
+		now := time.Now()
+		i.predictor.LocalFrameAcked(now)
+		i.predictor.LocalFrameLateAcked(now)
+		// Note: Not invoking i.predictor.SetSendInterval(<duration>) like Mosh does.
 	}
 }
 
@@ -346,23 +355,29 @@ func (i *Interposer) Read(p []byte) (int, error) {
 
 	// check if an upstream read is ready -- otherwise wait until one is received
 	if !i.droppedUpdate {
-		if err := <-i.upstreamErr; err != nil {
-			// got an error from upstream...
-			n := 0
-			if err == io.EOF {
-				// on EOF, send terminal close data too
-				closeData := []byte(i.display.Close())
-				n = copy(p[n:], closeData)
+		// choose between upstream data, and predicted data -- if a prediction is pending TODO
+		select {
+		case err := <-i.upstreamErr:
+			if err != nil {
+				// got an error from upstream...
+				n := 0
+				if err == io.EOF {
+					// on EOF, send terminal close data too
+					closeData := []byte(i.display.Close())
+					n = copy(p[n:], closeData)
+				}
+				return n, err
 			}
-			return n, err
+		case <-i.predictionNotification: // predicted data may be available -- apply prediction overlay on current state
 		}
-		// TODO make this into a select{} and choose between upstream data and predicted data, when prediction is added
 	}
 	i.droppedUpdate = false
 
 	// emit new output
 	i.emulatorMutex.Lock()
 	newFrame := i.emulator.GetFramebuffer()
+	// with predictions applied...
+	i.predictor.Apply(newFrame)
 	emission := []byte(i.display.NewFrame(i.initialized, i.state, newFrame))
 	i.initialized = true
 	i.state = terminal.CopyFramebuffer(newFrame)
@@ -387,9 +402,20 @@ func (i *Interposer) Read(p []byte) (int, error) {
 func (i *Interposer) Write(p []byte) (int, error) {
 	terminalToHost := &bytes.Buffer{}
 	i.emulatorMutex.Lock()
+	now := time.Now()
+	i.predictor.LocalFrameSent(now) // TODO ???
 	for _, b := range p {
+		// TODO write new user bytes to predictor (and the selected framebuffer)
+		//i.predictor.NewUserByte(b, i.state)
 		s := i.emulator.Act(parser.MakeUserByte(int(b)))
 		terminalToHost.WriteString(s)
+	}
+	if len(p) > 0 {
+		// notify that a prediction might be available in response to this user input (non-blocking channel put)
+		select {
+		case i.predictionNotification <- now:
+		default:
+		}
 	}
 	i.emulatorMutex.Unlock()
 	return i.upstream.Write(terminalToHost.Bytes())
@@ -400,6 +426,7 @@ func (i *Interposer) Resize(w, h int) {
 	i.emulatorMutex.Lock()
 	defer i.emulatorMutex.Unlock()
 	i.emulator.Act(parser.MakeResize(int64(w), int64(h)))
+	i.predictor.Reset()
 }
 
 // Produce a "patch" that transforms a fresh/reset terminal to one that matches the current display contents of the
@@ -411,5 +438,5 @@ func (i *Interposer) CurrentContents() string {
 	i.emulatorMutex.Unlock()
 
 	blank := terminal.MakeFramebuffer(width, height)
-	return i.display.NewFrame(false, blank, fb)
+	return i.display.NewFrame(false, blank, fb) // TODO apply predictor display changes
 }
