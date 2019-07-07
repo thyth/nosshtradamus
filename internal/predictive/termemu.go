@@ -54,10 +54,11 @@ type Interposer struct {
 
 	bufferMutex, emulatorMutex *sync.Mutex
 
-	state     *terminal.Framebuffer     // current state of the client's terminal
-	display   *terminal.Display         // used to generate deltas between framebuffers
-	emulator  *terminal.Complete        // processor of terminal control sequences
-	predictor *overlay.PredictionEngine // speculative/predictive engine
+	remoteState *terminal.Framebuffer     // state of the remote terminal, as we know it currently
+	//localState  *terminal.Framebuffer     // state of the local terminal, including possible predictions
+	display     *terminal.Display         // used to generate deltas between framebuffers
+	emulator    *terminal.Complete        // processor of terminal control sequences
+	predictor   *overlay.PredictionEngine // speculative/predictive engine
 
 	predictionNotification chan interface{}
 
@@ -238,10 +239,11 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 		bufferMutex:   &sync.Mutex{},
 		emulatorMutex: &sync.Mutex{},
 
-		state:     terminal.MakeFramebuffer(1, 1),
-		display:   terminal.MakeDisplay(true),
-		emulator:  terminal.MakeComplete(1, 1),
-		predictor: overlay.MakePredictionEngine(),
+		remoteState: terminal.MakeFramebuffer(1, 1),
+		//localState:  terminal.MakeFramebuffer(1, 1),
+		display:     terminal.MakeDisplay(true),
+		emulator:    terminal.MakeComplete(1, 1),
+		predictor:   overlay.MakePredictionEngine(),
 
 		predictionNotification: make(chan interface{}),
 
@@ -311,7 +313,8 @@ func (i *Interposer) Close() error {
 		_, _ = io.Copy(i.pending, bytes.NewReader(closeStr))
 		i.bufferMutex.Unlock()
 	}
-	return i.upstream.Close()
+	defer func() { _ = i.upstream.Close() }() // close the underlying reader if the asynk fails to, for some reason
+	return i.upstreamAsynk.Close()            // close the asynk attached to upstream
 }
 
 // Read printed output from the terminal.
@@ -357,7 +360,7 @@ func (i *Interposer) Read(p []byte) (int, error) {
 
 	// check if an upstream read is ready -- otherwise wait until one is received
 	if !i.droppedUpdate {
-		// choose between upstream data, and predicted data -- if a prediction is pending TODO
+		// choose between upstream data, and predicted data -- if either is pending
 		select {
 		case err := <-i.upstreamErr:
 			if err != nil {
@@ -375,14 +378,16 @@ func (i *Interposer) Read(p []byte) (int, error) {
 	}
 	i.droppedUpdate = false
 
+	// TODO this is wrong; match behavior of STMClient::output_new_frame in mosh using two independent framebuffers
 	// emit new output
 	i.emulatorMutex.Lock()
 	newFrame := i.emulator.GetFramebuffer()
+	remoteFramebufferCopy := terminal.CopyFramebuffer(newFrame)
 	// with predictions applied...
 	i.predictor.Apply(newFrame)
-	emission := []byte(i.display.NewFrame(i.initialized, i.state, newFrame))
+	emission := []byte(i.display.NewFrame(i.initialized, i.remoteState, newFrame))
 	i.initialized = true
-	i.state = terminal.CopyFramebuffer(newFrame)
+	i.remoteState = remoteFramebufferCopy
 	i.emulatorMutex.Unlock()
 
 	n := copy(p, emission)
@@ -408,7 +413,7 @@ func (i *Interposer) Write(p []byte) (int, error) {
 	i.predictor.LocalFrameSent(now) // TODO ???
 	for _, b := range p {
 		// TODO write new user bytes to predictor (and the selected framebuffer)
-		i.predictor.NewUserByte(b, i.state)
+		i.predictor.NewUserByte(b, i.remoteState) // TODO local state?
 		s := i.emulator.Act(parser.MakeUserByte(int(b)))
 		terminalToHost.WriteString(s)
 	}
@@ -417,6 +422,7 @@ func (i *Interposer) Write(p []byte) (int, error) {
 		select {
 		case i.predictionNotification <- now:
 		default:
+			i.droppedUpdate = true
 		}
 	}
 	i.emulatorMutex.Unlock()
@@ -432,13 +438,21 @@ func (i *Interposer) Resize(w, h int) {
 }
 
 // Produce a "patch" that transforms a fresh/reset terminal to one that matches the current display contents of the
-// interposed terminal.
-func (i *Interposer) CurrentContents() string {
+// interposed terminal. By default, this will show predictions in flight, but this can be disabled by the parameter.
+func (i *Interposer) CurrentContents(noPrediction bool) string {
 	i.emulatorMutex.Lock()
 	width, height := i.width, i.height
 	fb := i.emulator.GetFramebuffer()
+	if !noPrediction {
+		// copy it so we can apply predictor changes
+		fb = terminal.CopyFramebuffer(fb)
+	}
 	i.emulatorMutex.Unlock()
 
+	if !noPrediction {
+		i.predictor.Apply(fb)
+	}
 	blank := terminal.MakeFramebuffer(width, height)
-	return i.display.NewFrame(false, blank, fb) // TODO apply predictor display changes
+
+	return i.display.NewFrame(false, blank, fb)
 }

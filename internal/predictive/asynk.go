@@ -33,7 +33,7 @@ func MakeAsynk(upstream io.Writer, capacity int) *Asynk {
 		buffer:      make([]byte, capacity),
 		bufferIndex: 0,
 
-		writeNotify: make(chan interface{}),
+		writeNotify: make(chan interface{}, 1), // buffer up to one notification, for notifying during a write
 	}
 	go func(asynk *Asynk) {
 		lastTransmittedIndex := 0
@@ -42,9 +42,18 @@ func MakeAsynk(upstream io.Writer, capacity int) *Asynk {
 			nextIndex := asynk.bufferIndex
 			asynk.mutex.Unlock()
 			_, asynk.upstreamErr = upstream.Write(asynk.buffer[lastTransmittedIndex:nextIndex])
+			lastTransmittedIndex = nextIndex
 			if asynk.upstreamErr != nil {
 				return
 			}
+			asynk.mutex.Lock()
+			// if we've written the entire buffer, reset the index to reclaim usable capacity
+			postWriteIndex := asynk.bufferIndex
+			if postWriteIndex == nextIndex {
+				asynk.bufferIndex = 0
+				lastTransmittedIndex = 0
+			}
+			asynk.mutex.Unlock()
 			// if another asynk write happened while finishing the upstream write, we should have another notification
 		}
 	}(asynk)
