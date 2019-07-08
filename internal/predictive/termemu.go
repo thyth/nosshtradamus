@@ -55,7 +55,7 @@ type Interposer struct {
 	bufferMutex, emulatorMutex *sync.Mutex
 
 	remoteState *terminal.Framebuffer     // state of the remote terminal, as we know it currently
-	//localState  *terminal.Framebuffer     // state of the local terminal, including possible predictions
+	localState  *terminal.Framebuffer     // state of the local terminal, including possible predictions
 	display     *terminal.Display         // used to generate deltas between framebuffers
 	emulator    *terminal.Complete        // processor of terminal control sequences
 	predictor   *overlay.PredictionEngine // speculative/predictive engine
@@ -240,7 +240,7 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 		emulatorMutex: &sync.Mutex{},
 
 		remoteState: terminal.MakeFramebuffer(1, 1),
-		//localState:  terminal.MakeFramebuffer(1, 1),
+		localState:  terminal.MakeFramebuffer(1, 1),
 		display:     terminal.MakeDisplay(true),
 		emulator:    terminal.MakeComplete(1, 1),
 		predictor:   overlay.MakePredictionEngine(),
@@ -378,16 +378,17 @@ func (i *Interposer) Read(p []byte) (int, error) {
 	}
 	i.droppedUpdate = false
 
-	// TODO this is wrong; match behavior of STMClient::output_new_frame in mosh using two independent framebuffers
+	// TODO this almost works... but is still not *quite* right
 	// emit new output
 	i.emulatorMutex.Lock()
 	newFrame := i.emulator.GetFramebuffer()
 	remoteFramebufferCopy := terminal.CopyFramebuffer(newFrame)
 	// with predictions applied...
-	i.predictor.Apply(newFrame)
-	emission := []byte(i.display.NewFrame(i.initialized, i.remoteState, newFrame))
+	i.predictor.Apply(remoteFramebufferCopy)
+	emission := []byte(i.display.NewFrame(i.initialized, i.localState, remoteFramebufferCopy))
 	i.initialized = true
-	i.remoteState = remoteFramebufferCopy
+	i.remoteState = newFrame
+	i.localState = remoteFramebufferCopy
 	i.emulatorMutex.Unlock()
 
 	n := copy(p, emission)
@@ -412,8 +413,8 @@ func (i *Interposer) Write(p []byte) (int, error) {
 	now := time.Now()
 	i.predictor.LocalFrameSent(now) // TODO ???
 	for _, b := range p {
-		// TODO write new user bytes to predictor (and the selected framebuffer)
-		i.predictor.NewUserByte(b, i.remoteState) // TODO local state?
+		// write new user bytes to predictor (and the selected framebuffer)
+		i.predictor.NewUserByte(b, i.localState)
 		s := i.emulator.Act(parser.MakeUserByte(int(b)))
 		terminalToHost.WriteString(s)
 	}
