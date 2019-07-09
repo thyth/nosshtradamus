@@ -54,12 +54,13 @@ type Interposer struct {
 
 	bufferMutex, emulatorMutex *sync.Mutex
 
-	remoteState *terminal.Framebuffer     // state of the remote terminal, as we know it currently
-	localState  *terminal.Framebuffer     // state of the local terminal, including possible predictions
-	display     *terminal.Display         // used to generate deltas between framebuffers
-	emulator    *terminal.Complete        // processor of terminal control sequences
-	predictor   *overlay.PredictionEngine // speculative/predictive engine
+	remoteState *terminal.Framebuffer // state of the remote terminal, as we know it currently
+	localState  *terminal.Framebuffer // state of the local terminal, including possible predictions
+	display     *terminal.Display     // used to generate deltas between framebuffers
+	emulator    *terminal.Complete    // processor of terminal control sequences
 
+	predictionEpoch        int64                     // monotonically increasing time value for every round trip
+	predictor              *overlay.PredictionEngine // speculative/predictive engine
 	predictionNotification chan interface{}
 
 	opened, initialized bool
@@ -81,6 +82,7 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 
 		// Specifies the default prediction mode. Using "experimental", as it is the most aggressive.
 		DisplayPreference: overlay.PredictExperimental,
+		// TODO note: setting this to PredictAlways seems to show more correct cursor behavior than experimental - why?
 
 		// Specifies if the prediction should include character overwrite predictions. Enabling for greater aggression.
 		DisplayPredictOverwrites: true,
@@ -126,9 +128,6 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 //     the first update. These updates wre written to STDOUT, and represents the only way that output fed from the child
 //     process can reach the parent terminal (via state accumulated within the Terminal::Complete emulator, and the
 //     framebuffer instances returned from it).
-//   - TODO This method of retrieving Terminal::Framebuffer instances from Terminal::Complete suggests callee memory
-//     TODO ownership. Need to double check to see if the current (v0.1.1) go-mosh implementation leaks memory.
-//     - FIXME: Probably not leaking memory, since the emulator's framebuffer seems lifetime bound to the emulator?
 //
 // - The 'benchmark.cc' example program uses the Overlay::OverlayManager along with a similar setup of a
 //   Terminal::Complete, (pair of) Terminal::Framebuffer, and Terminal::Display to benchmark the performance of a
@@ -243,8 +242,9 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 		localState:  terminal.MakeFramebuffer(1, 1),
 		display:     terminal.MakeDisplay(true),
 		emulator:    terminal.MakeComplete(1, 1),
-		predictor:   overlay.MakePredictionEngine(),
 
+		predictionEpoch:        0,
+		predictor:              overlay.MakePredictionEngine(),
 		predictionNotification: make(chan interface{}),
 
 		opened:      false,
@@ -295,9 +295,16 @@ func (i *Interposer) pullFromUpstream() {
 			return
 		}
 
-		now := time.Now()
-		i.predictor.LocalFrameAcked(now)
-		i.predictor.LocalFrameLateAcked(now)
+		//now := time.Now() // FIXME HACK - not supposed to use an absolute timestamp here; Mosh "epoch" instead.
+		i.emulatorMutex.Lock()
+		// TODO read mosh's code on the NetworkPointer to get a better view of these frame ack calls
+		// FIXME HACK - wrap monotonic frame number into a format that results in integer passthrough in go-mosh
+		frameNumberHack := time.Unix(0, i.predictionEpoch*1000000)
+		i.predictionEpoch++
+		i.emulatorMutex.Unlock()
+		i.predictor.LocalFrameAcked(frameNumberHack)     // TODO fix go-mosh to passthrough an integer
+		i.predictor.LocalFrameLateAcked(frameNumberHack) // TODO fix go-mosh to passthrough an integer
+		//i.predictor.SetSendInterval(100 * time.Millisecond) // TODO defaults to 250 ms in the mosh code?
 		// Note: Not invoking i.predictor.SetSendInterval(<duration>) like Mosh does.
 	}
 }
@@ -410,18 +417,23 @@ func (i *Interposer) Read(p []byte) (int, error) {
 func (i *Interposer) Write(p []byte) (int, error) {
 	terminalToHost := &bytes.Buffer{}
 	i.emulatorMutex.Lock()
-	now := time.Now()
-	i.predictor.LocalFrameSent(now) // TODO ???
+	//now := time.Now() // FIXME HACK - not supposed to use an absolute timestamp here; Mosh "epoch" instead.
+	// FIXME HACK - wrap monotonic frame number into a format that results in integer passthrough in go-mosh
+	frameNumberHack := time.Unix(0, i.predictionEpoch*1000000)
+	i.predictor.LocalFrameSent(frameNumberHack) // TODO fix go-mosh to passthrough an integer
 	for _, b := range p {
 		// write new user bytes to predictor (and the selected framebuffer)
 		i.predictor.NewUserByte(b, i.localState)
 		s := i.emulator.Act(parser.MakeUserByte(int(b)))
 		terminalToHost.WriteString(s)
+		if b == 0x0c { // repaint
+			i.initialized = false
+		}
 	}
 	if len(p) > 0 {
 		// notify that a prediction might be available in response to this user input (non-blocking channel put)
 		select {
-		case i.predictionNotification <- now:
+		case i.predictionNotification <- true:
 		default:
 			i.droppedUpdate = true
 		}
