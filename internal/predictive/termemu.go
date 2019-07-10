@@ -40,7 +40,7 @@ func GetVersion() string {
 // local writes, and state read from the upstream.
 type Interposer struct {
 	upstream        io.ReadWriteCloser
-	upstreamAsynk   *Asynk
+	upstreamAsynk   io.WriteCloser
 	upstreamErr     chan error
 	lastUpstreamErr error
 	droppedUpdate   bool
@@ -366,6 +366,7 @@ func (i *Interposer) Read(p []byte) (int, error) {
 	}
 
 	// check if an upstream read is ready -- otherwise wait until one is received
+	isPrediction := false
 	if !i.droppedUpdate {
 		// choose between upstream data, and predicted data -- if either is pending
 		select {
@@ -381,6 +382,7 @@ func (i *Interposer) Read(p []byte) (int, error) {
 				return n, err
 			}
 		case <-i.predictionNotification: // predicted data may be available -- apply prediction overlay on current state
+			isPrediction = true
 		}
 	}
 	i.droppedUpdate = false
@@ -391,6 +393,7 @@ func (i *Interposer) Read(p []byte) (int, error) {
 	newFrame := i.emulator.GetFramebuffer()
 	remoteFramebufferCopy := terminal.CopyFramebuffer(newFrame)
 	// with predictions applied...
+	i.predictor.Cull(remoteFramebufferCopy) // predictor must cull the target framebuffer before application
 	i.predictor.Apply(remoteFramebufferCopy)
 	emission := []byte(i.display.NewFrame(i.initialized, i.localState, remoteFramebufferCopy))
 	i.initialized = true
@@ -408,7 +411,9 @@ func (i *Interposer) Read(p []byte) (int, error) {
 		_, _ = io.Copy(i.pending, bytes.NewReader(emission))
 		i.bufferMutex.Unlock()
 	}
-	i.lastUpdated = now
+	if !isPrediction {
+		i.lastUpdated = now
+	}
 
 	return n, nil
 }
@@ -463,6 +468,7 @@ func (i *Interposer) CurrentContents(noPrediction bool) string {
 	i.emulatorMutex.Unlock()
 
 	if !noPrediction {
+		i.predictor.Cull(fb)
 		i.predictor.Apply(fb)
 	}
 	blank := terminal.MakeFramebuffer(width, height)
