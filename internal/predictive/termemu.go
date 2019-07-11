@@ -59,7 +59,7 @@ type Interposer struct {
 	display     *terminal.Display     // used to generate deltas between framebuffers
 	emulator    *terminal.Complete    // processor of terminal control sequences
 
-	predictionEpoch        int64                     // monotonically increasing time value for every round trip
+	predictionEpoch        uint64                    // monotonically increasing time value for every round trip
 	predictor              *overlay.PredictionEngine // speculative/predictive engine
 	predictionNotification chan interface{}
 
@@ -295,15 +295,13 @@ func (i *Interposer) pullFromUpstream() {
 			return
 		}
 
-		//now := time.Now() // FIXME HACK - not supposed to use an absolute timestamp here; Mosh "epoch" instead.
 		i.emulatorMutex.Lock()
 		// TODO read mosh's code on the NetworkPointer to get a better view of these frame ack calls
-		// FIXME HACK - wrap monotonic frame number into a format that results in integer passthrough in go-mosh
-		frameNumberHack := time.Unix(0, i.predictionEpoch*1000000)
+		frameNumber := i.predictionEpoch
 		i.predictionEpoch++
 		i.emulatorMutex.Unlock()
-		i.predictor.LocalFrameAcked(frameNumberHack)     // TODO fix go-mosh to passthrough an integer
-		i.predictor.LocalFrameLateAcked(frameNumberHack) // TODO fix go-mosh to passthrough an integer
+		i.predictor.LocalFrameAcked(frameNumber)
+		i.predictor.LocalFrameLateAcked(frameNumber)
 		//i.predictor.SetSendInterval(100 * time.Millisecond) // TODO defaults to 250 ms in the mosh code?
 		// Note: Not invoking i.predictor.SetSendInterval(<duration>) like Mosh does.
 	}
@@ -422,10 +420,7 @@ func (i *Interposer) Read(p []byte) (int, error) {
 func (i *Interposer) Write(p []byte) (int, error) {
 	terminalToHost := &bytes.Buffer{}
 	i.emulatorMutex.Lock()
-	//now := time.Now() // FIXME HACK - not supposed to use an absolute timestamp here; Mosh "epoch" instead.
-	// FIXME HACK - wrap monotonic frame number into a format that results in integer passthrough in go-mosh
-	frameNumberHack := time.Unix(0, i.predictionEpoch*1000000)
-	i.predictor.LocalFrameSent(frameNumberHack) // TODO fix go-mosh to passthrough an integer
+	i.predictor.LocalFrameSent(i.predictionEpoch)
 	for _, b := range p {
 		// write new user bytes to predictor (and the selected framebuffer)
 		i.predictor.NewUserByte(b, i.localState)

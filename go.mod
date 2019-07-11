@@ -2,4 +2,4 @@ module nosshtradamus
 
 require golang.org/x/crypto v0.0.0-20190131182504-b8fe1690c613
 
-require gitlab.hive.thyth.com/chronostruct/go-mosh v0.1.1
+require gitlab.hive.thyth.com/chronostruct/go-mosh v0.1.2
