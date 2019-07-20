@@ -4,7 +4,6 @@ import (
 	"io"
 	"runtime"
 	"sync"
-	"time"
 )
 
 // Asynk - Asynchronous Sink Writer
@@ -18,7 +17,7 @@ import (
 
 type Asynk struct {
 	upstream    io.Writer
-	mutex       *sync.Mutex
+	cond        *sync.Cond
 	buffer      []byte
 	bufferIndex int
 
@@ -29,7 +28,7 @@ type Asynk struct {
 func MakeAsynk(upstream io.Writer, capacity int) *Asynk {
 	asynk := &Asynk{
 		upstream:    upstream,
-		mutex:       &sync.Mutex{},
+		cond:        sync.NewCond(&sync.Mutex{}),
 		buffer:      make([]byte, capacity),
 		bufferIndex: 0,
 
@@ -38,22 +37,23 @@ func MakeAsynk(upstream io.Writer, capacity int) *Asynk {
 	go func(asynk *Asynk) {
 		lastTransmittedIndex := 0
 		for range asynk.writeNotify {
-			asynk.mutex.Lock()
+			asynk.cond.L.Lock()
 			nextIndex := asynk.bufferIndex
-			asynk.mutex.Unlock()
+			asynk.cond.L.Unlock()
 			_, asynk.upstreamErr = upstream.Write(asynk.buffer[lastTransmittedIndex:nextIndex])
 			lastTransmittedIndex = nextIndex
 			if asynk.upstreamErr != nil {
 				return
 			}
-			asynk.mutex.Lock()
+			asynk.cond.L.Lock()
 			// if we've written the entire buffer, reset the index to reclaim usable capacity
 			postWriteIndex := asynk.bufferIndex
 			if postWriteIndex == nextIndex {
 				asynk.bufferIndex = 0
 				lastTransmittedIndex = 0
 			}
-			asynk.mutex.Unlock()
+			asynk.cond.Signal()
+			asynk.cond.L.Unlock()
 			// if another asynk write happened while finishing the upstream write, we should have another notification
 		}
 	}(asynk)
@@ -72,10 +72,10 @@ func (asynk *Asynk) Write(p []byte) (int, error) {
 	if asynk.upstreamErr != nil {
 		return 0, asynk.upstreamErr
 	}
-	asynk.mutex.Lock()
+	asynk.cond.L.Lock()
 	n := copy(asynk.buffer[asynk.bufferIndex:], p)
 	asynk.bufferIndex += n
-	asynk.mutex.Unlock()
+	asynk.cond.L.Unlock()
 
 	select {
 	case asynk.writeNotify <- true:
@@ -91,8 +91,10 @@ func (asynk *Asynk) Write(p []byte) (int, error) {
 	default:
 		// put was rejected -- upstream must be slow
 		if len(p) > n {
-			// unfortunately we still have more data to write, so need to sleep and try again
-			time.Sleep(1 * time.Millisecond)
+			// unfortunately we still have more data to write, so need to wait for room and try again
+			asynk.cond.L.Lock()
+			asynk.cond.Wait()
+			asynk.cond.L.Unlock()
 			return asynk.Write(p[n:])
 		} else {
 			// we wrote everything we care about to the buffer, so can return and let the asynk deal with the upstream
