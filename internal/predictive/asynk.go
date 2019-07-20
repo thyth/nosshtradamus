@@ -61,7 +61,11 @@ func MakeAsynk(upstream io.Writer, capacity int) *Asynk {
 }
 
 func (asynk *Asynk) Close() error {
+	if asynk.upstreamErr == nil {
+		asynk.upstreamErr = io.EOF
+	}
 	close(asynk.writeNotify)
+	asynk.cond.Broadcast() // release any client waiting for space to write
 	if closer, ok := asynk.upstream.(io.Closer); ok {
 		return closer.Close()
 	}
