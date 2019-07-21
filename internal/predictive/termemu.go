@@ -61,7 +61,7 @@ type Interposer struct {
 	display    *terminal.Display     // used to generate deltas between framebuffers
 	emulator   *terminal.Complete    // processor of terminal control sequences
 
-	predictionEpoch        uint64                    // monotonically increasing time value for every round trip
+	pendingEpoch           bool                      // is an update pending (hack)
 	predictor              *overlay.PredictionEngine // speculative/predictive engine
 	predictionNotification chan interface{}
 
@@ -247,7 +247,7 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 		display:    terminal.MakeDisplay(true),
 		emulator:   terminal.MakeComplete(1, 1),
 
-		predictionEpoch:        0,
+		pendingEpoch:           false,
 		predictor:              overlay.MakePredictionEngine(),
 		predictionNotification: make(chan interface{}),
 
@@ -268,10 +268,11 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 }
 
 func (i *Interposer) SpeculateEpoch(epoch uint64) {
+	i.pendingEpoch = true
 	i.predictor.LocalFrameSent(epoch)
 }
 
-func (i *Interposer) CompleteEpoch(epoch uint64) {
+func (i *Interposer) CompleteEpoch(epoch uint64, pending bool) {
 	i.emulatorMutex.Lock()
 	i.predictor.LocalFrameAcked(epoch)
 	i.predictor.LocalFrameLateAcked(epoch)
@@ -315,6 +316,11 @@ func (i *Interposer) pullFromUpstream() {
 					}
 					return
 				}
+			}
+
+			// FIXME hack
+			if !i.pendingEpoch {
+				i.completeRemoteState = terminal.CopyFramebuffer(i.pendingRemoteState)
 			}
 		}
 

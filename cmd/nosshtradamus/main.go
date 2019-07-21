@@ -65,10 +65,16 @@ func main() {
 									time.Sleep(fakeDelay)
 								}
 								_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
-								fmt.Printf("Pong %d\n", epoch)
 								epochal.ResponseTo(epoch)
 							}()
-						}, i.CompleteEpoch)
+						}, func(epoch uint64, pending bool) {
+							go func() {
+								// FIXME hack!
+								time.Sleep(20 * time.Millisecond)
+								fmt.Printf("Pong %d - Pending %v\n", epoch, pending)
+								i.CompleteEpoch(epoch, pending)
+							}()
+						})
 					}
 					interposer := predictive.Interpose(wrapped, options)
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {

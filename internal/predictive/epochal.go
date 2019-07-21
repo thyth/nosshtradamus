@@ -12,10 +12,10 @@ type Epochal struct {
 	epoch    *uint64
 
 	requestGenerator func(epochal *Epochal, epoch uint64)
-	epochChanged     func(epoch uint64)
+	epochChanged     func(epoch uint64, pending bool)
 }
 
-func MakeEpochal(rwc io.ReadWriteCloser, requestGenerator func(*Epochal, uint64), onEpochIncrement func(uint64)) *Epochal {
+func MakeEpochal(rwc io.ReadWriteCloser, requestGenerator func(*Epochal, uint64), onEpochIncrement func(uint64, bool)) *Epochal {
 	startingEpoch := uint64(0)
 	return &Epochal{
 		upstream: rwc,
@@ -43,7 +43,9 @@ func (e *Epochal) Close() error {
 	return e.upstream.Close()
 }
 
-func (e *Epochal) ResponseTo(epoch uint64) {
+func (e *Epochal) ResponseTo(epoch uint64) bool {
 	// variant A -- just pass it through
-	e.epochChanged(epoch)
+	pending := atomic.LoadUint64(e.epoch) > epoch
+	e.epochChanged(epoch, pending)
+	return pending
 }
