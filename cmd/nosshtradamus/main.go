@@ -52,10 +52,25 @@ func main() {
 			if chanType == "session" {
 				wrapped = sshChannel
 				if fakeDelay > 0 {
-					wrapped = predictive.Delay(wrapped, fakeDelay)
+					wrapped = predictive.RingDelay(wrapped, fakeDelay, 512)
 				}
 				if !noPrediction {
-					interposer := predictive.Interpose(wrapped, predictive.GetDefaultInterposerOptions())
+					options := predictive.GetDefaultInterposerOptions()
+					options.PreFilter = func(rwc io.ReadWriteCloser, i *predictive.Interposer) io.ReadWriteCloser {
+						return predictive.MakeEpochal(rwc, func(epochal *predictive.Epochal, epoch uint64) {
+							i.SpeculateEpoch(epoch)
+							fmt.Printf("Ping %d\n", epoch)
+							go func() {
+								if fakeDelay > 0 {
+									time.Sleep(fakeDelay)
+								}
+								_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
+								fmt.Printf("Pong %d\n", epoch)
+								epochal.ResponseTo(epoch)
+							}()
+						}, i.CompleteEpoch)
+					}
+					interposer := predictive.Interpose(wrapped, options)
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
 						return func (recipient ssh.Channel, sender <-chan *ssh.Request) {
 							// capture and process a subset of requests prior to forwarding them
