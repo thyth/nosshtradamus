@@ -282,6 +282,7 @@ func (i *Interposer) CompleteEpoch(epoch uint64, pending bool) {
 	// TODO when complete epoch matches the current speculative epoch, also need to copy pending -> complete (since nothing is pending)
 	// TODO ... otherwise no terminal outputs will occur that are not in response to a terminal input!!!
 	i.completeRemoteState = terminal.CopyFramebuffer(i.pendingRemoteState)
+	i.pendingEpoch = pending
 	i.emulatorMutex.Unlock()
 
 	// notify update
