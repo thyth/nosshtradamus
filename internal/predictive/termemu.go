@@ -86,7 +86,6 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 
 		// Specifies the default prediction mode. Using "experimental", as it is the most aggressive.
 		DisplayPreference: overlay.PredictExperimental,
-		// TODO note: setting this to PredictAlways seems to show more correct cursor behavior than experimental - why?
 
 		// Specifies if the prediction should include character overwrite predictions. Enabling for greater aggression.
 		DisplayPredictOverwrites: true,
@@ -216,6 +215,9 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 //     - void output_new_frame(void):
 //       - Retrieves the latest remote state from the network object. Likely equivalent to calling .get_fb() on a
 //         Terminal::Complete instance. Assigns it to 'new_state' instance Terminal::Framebuffer reference.
+//       - The latest remote state retrieved in this manner represents the last "complete" atomically transferred epoch
+//         snapshot of that state. Additional data could be received by the mosh networking layer, but until an epoch
+//         is fully transferred, it is not utilized in generating a new output frame.
 //       - Invokes overlay.apply(new_state) to apply the effects of the prediction engine (and other overlays) to that
 //         framebuffer.
 //       - Calculates a delta terminal update string between local_framebuffer and this new_state including the locally
@@ -276,11 +278,12 @@ func (i *Interposer) CompleteEpoch(epoch uint64, pending bool) {
 	i.emulatorMutex.Lock()
 	i.predictor.LocalFrameAcked(epoch)
 	i.predictor.LocalFrameLateAcked(epoch)
-	//i.predictor.SetSendInterval(100 * time.Millisecond) // TODO defaults to 250 ms in the mosh code?
-	// Note: Not invoking i.predictor.SetSendInterval(<duration>) like Mosh does.
+	// TODO The predictor's SetSendInterval seems to take epoch confirmation latency, and utilize that latency as one
+	// TODO of the primary signals for whether or not it should underline predictions with hysteresis (SRTT_LOW/HIGH).
+	// TODO The current prediction behavior is drawing underlines always, even when confirmation comes almost instantly
+	// TODO since this signal is not provided.
+	//i.predictor.SetSendInterval(100 * time.Millisecond)
 
-	// TODO when complete epoch matches the current speculative epoch, also need to copy pending -> complete (since nothing is pending)
-	// TODO ... otherwise no terminal outputs will occur that are not in response to a terminal input!!!
 	i.completeRemoteState = terminal.CopyFramebuffer(i.pendingRemoteState)
 	i.pendingEpoch = pending
 	i.emulatorMutex.Unlock()
@@ -319,7 +322,6 @@ func (i *Interposer) pullFromUpstream() {
 				}
 			}
 
-			// FIXME hack
 			if !i.pendingEpoch {
 				i.completeRemoteState = terminal.CopyFramebuffer(i.pendingRemoteState)
 			}
@@ -417,8 +419,7 @@ func (i *Interposer) Read(p []byte) (int, error) {
 	}
 	i.droppedUpdate = false
 
-	// TODO this almost works... but is still not *quite* right
-	// emit new output
+	// emit new output, based on the last completed epoch we've received
 	i.emulatorMutex.Lock()
 	remoteFramebufferCopy := terminal.CopyFramebuffer(i.completeRemoteState)
 	// with predictions applied...
