@@ -258,6 +258,8 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 	}
 	inter.predictor.SetDisplayPreference(options.DisplayPreference)
 	inter.predictor.SetPredictOverwrite(options.DisplayPredictOverwrites)
+	// SetSendInterval with zero so initial predictions don't show underlined (until we get a measurement)
+	inter.predictor.SetSendInterval(0)
 
 	if options.PreFilter != nil {
 		rwc = options.PreFilter(rwc, inter)
