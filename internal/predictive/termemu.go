@@ -274,15 +274,11 @@ func (i *Interposer) SpeculateEpoch(epoch uint64) {
 	i.predictor.LocalFrameSent(epoch)
 }
 
-func (i *Interposer) CompleteEpoch(epoch uint64, pending bool) {
+func (i *Interposer) CompleteEpoch(epoch uint64, pending bool, latency time.Duration) {
 	i.emulatorMutex.Lock()
 	i.predictor.LocalFrameAcked(epoch)
 	i.predictor.LocalFrameLateAcked(epoch)
-	// TODO The predictor's SetSendInterval seems to take epoch confirmation latency, and utilize that latency as one
-	// TODO of the primary signals for whether or not it should underline predictions with hysteresis (SRTT_LOW/HIGH).
-	// TODO The current prediction behavior is drawing underlines always, even when confirmation comes almost instantly
-	// TODO since this signal is not provided.
-	//i.predictor.SetSendInterval(100 * time.Millisecond)
+	i.predictor.SetSendInterval(latency)
 
 	i.completeRemoteState = terminal.CopyFramebuffer(i.pendingRemoteState)
 	i.pendingEpoch = pending

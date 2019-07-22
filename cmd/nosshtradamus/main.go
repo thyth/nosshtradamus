@@ -59,20 +59,21 @@ func main() {
 					options.PreFilter = func(rwc io.ReadWriteCloser, i *predictive.Interposer) io.ReadWriteCloser {
 						return predictive.MakeEpochal(rwc, func(epochal *predictive.Epochal, epoch uint64) {
 							i.SpeculateEpoch(epoch)
+							pingStart := time.Now()
 							fmt.Printf("Ping %d\n", epoch)
 							go func() {
 								if fakeDelay > 0 {
 									time.Sleep(fakeDelay)
 								}
 								_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
-								epochal.ResponseTo(epoch)
+								epochal.ResponseTo(epoch, pingStart)
 							}()
-						}, func(epoch uint64, pending bool) {
+						}, func(epoch uint64, pending bool, latency time.Duration) {
 							go func() {
 								// FIXME hack!
 								time.Sleep(20 * time.Millisecond)
-								fmt.Printf("Pong %d - Pending %v\n", epoch, pending)
-								i.CompleteEpoch(epoch, pending)
+								fmt.Printf("Pong %d - Pending %v - (%v)\n", epoch, pending, latency)
+								i.CompleteEpoch(epoch, pending, latency)
 							}()
 						})
 					}
