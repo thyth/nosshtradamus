@@ -70,8 +70,8 @@ func main() {
 							}()
 						}, func(epoch uint64, pending bool, latency time.Duration) {
 							go func() {
-								// FIXME hack!
-								time.Sleep(20 * time.Millisecond)
+								// note: for some reason, a single frame delay/decoupling seems necessary here
+								time.Sleep(time.Second / 60)
 								fmt.Printf("Pong %d - Pending %v - (%v)\n", epoch, pending, latency)
 								i.CompleteEpoch(epoch, pending, latency)
 							}()
@@ -79,7 +79,7 @@ func main() {
 					}
 					interposer := predictive.Interpose(wrapped, options)
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
-						return func (recipient ssh.Channel, sender <-chan *ssh.Request) {
+						return func(recipient ssh.Channel, sender <-chan *ssh.Request) {
 							// capture and process a subset of requests prior to forwarding them
 							passthrough := make(chan *ssh.Request)
 							go sink(recipient, passthrough)

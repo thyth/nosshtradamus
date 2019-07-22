@@ -447,6 +447,8 @@ func (i *Interposer) Read(p []byte) (int, error) {
 
 // Write user input to the terminal.
 func (i *Interposer) Write(p []byte) (int, error) {
+	// TODO tie SetSendInterval to the oldest un-acknolwedged epoch. This will allow triggering underlines even if we
+	// TODO haven't yet received a (delayed) response from the server.
 	terminalToHost := &bytes.Buffer{}
 	i.emulatorMutex.Lock()
 	for _, b := range p {
