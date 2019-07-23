@@ -45,6 +45,8 @@ func main() {
 
 	var filter sshproxy.ChannelStreamFilter
 	if !noPrediction || fakeDelay > 0 {
+		// TODO Need to add a request filter on proxy client -> server direction enabling runtime control over the
+		// TODO prediction mode (and maybe underline behavior control).
 		filter = func(chanType string, sshChannel ssh.Channel) (io.ReadWriteCloser, sshproxy.ChannelRequestFilter) {
 			var wrapped io.ReadWriteCloser
 			var reqFilter sshproxy.ChannelRequestFilter
@@ -60,6 +62,9 @@ func main() {
 						return predictive.MakeEpochal(rwc, func(epochal *predictive.Epochal, epoch uint64) {
 							i.SpeculateEpoch(epoch)
 							pingStart := time.Now()
+							if i.PendingEpochStarted.IsZero() {
+								i.PendingEpochStarted = pingStart
+							}
 							fmt.Printf("Ping %d\n", epoch)
 							go func() {
 								if fakeDelay > 0 {
@@ -70,7 +75,7 @@ func main() {
 							}()
 						}, func(epoch uint64, pending bool, latency time.Duration) {
 							go func() {
-								// note: for some reason, a single frame delay/decoupling seems necessary here
+								// note: for some reason, a single frame delay/decoupling seems necessary here (hack)
 								time.Sleep(time.Second / 60)
 								fmt.Printf("Pong %d - Pending %v - (%v)\n", epoch, pending, latency)
 								i.CompleteEpoch(epoch, pending, latency)

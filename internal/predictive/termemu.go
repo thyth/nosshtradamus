@@ -62,6 +62,7 @@ type Interposer struct {
 	emulator   *terminal.Complete    // processor of terminal control sequences
 
 	pendingEpoch           bool                      // is an update pending (hack)
+	PendingEpochStarted    time.Time                 // HACK for tracking start of a pending epoch
 	predictor              *overlay.PredictionEngine // speculative/predictive engine
 	predictionNotification chan interface{}
 
@@ -284,6 +285,11 @@ func (i *Interposer) CompleteEpoch(epoch uint64, pending bool, latency time.Dura
 
 	i.completeRemoteState = terminal.CopyFramebuffer(i.pendingRemoteState)
 	i.pendingEpoch = pending
+	if !pending {
+		var zero time.Time
+		i.PendingEpochStarted = zero
+	}
+
 	i.emulatorMutex.Unlock()
 
 	// notify update
@@ -447,10 +453,13 @@ func (i *Interposer) Read(p []byte) (int, error) {
 
 // Write user input to the terminal.
 func (i *Interposer) Write(p []byte) (int, error) {
-	// TODO tie SetSendInterval to the oldest un-acknolwedged epoch. This will allow triggering underlines even if we
-	// TODO haven't yet received a (delayed) response from the server.
 	terminalToHost := &bytes.Buffer{}
 	i.emulatorMutex.Lock()
+	// tie SetSendInterval to the oldest un-acknowledged epoch. this triggers underlines even a server response is slow
+	if !i.PendingEpochStarted.IsZero() {
+		latency := time.Now().Sub(i.PendingEpochStarted)
+		i.predictor.SetSendInterval(latency)
+	}
 	for _, b := range p {
 		// write new user bytes to predictor (and the selected framebuffer)
 		i.predictor.NewUserByte(b, i.localState)
