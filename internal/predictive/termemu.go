@@ -38,8 +38,16 @@ func GetVersion() string {
 // (e.g. a net.Conn, or ssh.Channel). Writes to the interposer are written both to the upstream and to the predictive
 // terminal state tracker. Reads from the interposer contain a combination of predictive speculations in response to
 // local writes, and state read from the upstream.
+//
+// In addition to the upstream io.ReadWriteCloser, the predictive interposer requires a callback function parameter
+// called "openEpoch". This callback will be called (asynchronously) by the interposer to designate the opening of a
+// predictive epoch upon writing new data. This callback must invoke the CloseEpoch function after the written data has
+// been acknowledged and reflected in the data read from upstream, designating which epoch is completed and pass through
+// the timestamp it was provided as an argument. This data cannot be carried in-band in the terminal octet stream, but
+// should be sent in a parallel channel that shares the same latency/throughput characteristics as the octet stream.
 type Interposer struct {
 	upstream        io.ReadWriteCloser
+	upstreamAsynk   io.WriteCloser
 	upstreamErr     chan error
 	lastUpstreamErr error
 	droppedUpdate   bool
@@ -53,17 +61,37 @@ type Interposer struct {
 
 	bufferMutex, emulatorMutex *sync.Mutex
 
-	state     *terminal.Framebuffer     // current state of the client's terminal
-	display   *terminal.Display         // used to generate deltas between framebuffers
-	emulator  *terminal.Complete        // processor of terminal control sequences
-	predictor *overlay.PredictionEngine // speculative/predictive engine
+	completeRemoteState *terminal.Framebuffer // state of the remote terminal, in the last complete epoch
+	pendingRemoteState  *terminal.Framebuffer // state of the remote terminal, as we know it currently
+
+	localState *terminal.Framebuffer // state of the local terminal, including possible predictions
+	display    *terminal.Display     // used to generate deltas between framebuffers
+	emulator   *terminal.Complete    // processor of terminal control sequences
+
+	epoch                  uint64
+	pendingEpoch           bool                      // is an update pending (hack)
+	PendingEpochStarted    time.Time                 // HACK for tracking start of a pending epoch
+	predictor              *overlay.PredictionEngine // speculative/predictive engine
+	predictionNotification chan interface{}
+
+	openEpoch func(interposer *Interposer, epoch uint64, openedAt time.Time)
 
 	opened, initialized bool
 }
 
+type DisplayPreference overlay.DisplayPreference
+
+// bridge to the Mosh overlay parameters
+const (
+	PredictAlways = DisplayPreference(overlay.PredictAlways)
+	PredictNever = DisplayPreference(overlay.PredictNever)
+	PredictAdaptive = DisplayPreference(overlay.PredictAdaptive)
+	PredictExperimental = DisplayPreference(overlay.PredictExperimental)
+)
+
 type InterposerOptions struct {
 	CoalesceInterval         time.Duration
-	DisplayPreference        overlay.DisplayPreference
+	DisplayPreference        DisplayPreference
 	DisplayPredictOverwrites bool
 }
 
@@ -72,14 +100,15 @@ type InterposerOptions struct {
 func GetDefaultInterposerOptions() *InterposerOptions {
 	return &InterposerOptions{
 		// Specifies the time interval within which multiple updates to the terminal are coalesced into a single delta
-		// by Mosh. Default is 60 frames per second.
+		// by Mosh. Default is 60 frames per second (slightly higher than Mosh's default of 50 frames per second).
 		CoalesceInterval: time.Second / 60,
 
 		// Specifies the default prediction mode. Using "experimental", as it is the most aggressive.
-		DisplayPreference: overlay.PredictExperimental,
+		DisplayPreference: PredictExperimental,
 
-		// Specifies if the prediction should include character overwrite predictions. Enabling for greater aggression.
-		DisplayPredictOverwrites: true,
+		// Specifies if the prediction should prefer overwrite predictions over insertion predictions. Insertion
+		// predictions tend to provide better experience for line editing.
+		DisplayPredictOverwrites: false,
 	}
 }
 
@@ -122,9 +151,6 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 //     the first update. These updates wre written to STDOUT, and represents the only way that output fed from the child
 //     process can reach the parent terminal (via state accumulated within the Terminal::Complete emulator, and the
 //     framebuffer instances returned from it).
-//   - TODO This method of retrieving Terminal::Framebuffer instances from Terminal::Complete suggests callee memory
-//     TODO ownership. Need to double check to see if the current (v0.1.1) go-mosh implementation leaks memory.
-//     - FIXME: Probably not leaking memory, since the emulator's framebuffer seems lifetime bound to the emulator?
 //
 // - The 'benchmark.cc' example program uses the Overlay::OverlayManager along with a similar setup of a
 //   Terminal::Complete, (pair of) Terminal::Framebuffer, and Terminal::Display to benchmark the performance of a
@@ -209,6 +235,9 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 //     - void output_new_frame(void):
 //       - Retrieves the latest remote state from the network object. Likely equivalent to calling .get_fb() on a
 //         Terminal::Complete instance. Assigns it to 'new_state' instance Terminal::Framebuffer reference.
+//       - The latest remote state retrieved in this manner represents the last "complete" atomically transferred epoch
+//         snapshot of that state. Additional data could be received by the mosh networking layer, but until an epoch
+//         is fully transferred, it is not utilized in generating a new output frame.
 //       - Invokes overlay.apply(new_state) to apply the effects of the prediction engine (and other overlays) to that
 //         framebuffer.
 //       - Calculates a delta terminal update string between local_framebuffer and this new_state including the locally
@@ -219,10 +248,12 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 //   - The purpose of Terminal::Display.open() is described as "Put terminal in application-cursor-key mode".
 //   - The purpose of Terminal::Display.close() is described as "Restore terminal and terminal-driver state".
 
-func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
+func Interpose(rwc io.ReadWriteCloser, openEpoch func(interposer *Interposer, epoch uint64, openedAt time.Time),
+	options *InterposerOptions) *Interposer {
 	inter := &Interposer{
-		upstream:    rwc,
-		upstreamErr: make(chan error),
+		upstream:      rwc,
+		upstreamAsynk: MakeAsynk(rwc, 8192),
+		upstreamErr:   make(chan error),
 
 		coalesceInterval: options.CoalesceInterval,
 
@@ -234,19 +265,67 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 		bufferMutex:   &sync.Mutex{},
 		emulatorMutex: &sync.Mutex{},
 
-		state:     terminal.MakeFramebuffer(1, 1),
-		display:   terminal.MakeDisplay(true),
-		emulator:  terminal.MakeComplete(1, 1),
-		predictor: overlay.MakePredictionEngine(),
+		completeRemoteState: terminal.MakeFramebuffer(1, 1),
+		pendingRemoteState:  terminal.MakeFramebuffer(1, 1),
+
+		localState: terminal.MakeFramebuffer(1, 1),
+		display:    terminal.MakeDisplay(true),
+		emulator:   terminal.MakeComplete(1, 1),
+
+		epoch:                  0,
+		pendingEpoch:           false,
+		predictor:              overlay.MakePredictionEngine(),
+		predictionNotification: make(chan interface{}),
+
+		openEpoch: openEpoch,
 
 		opened:      false,
 		initialized: false,
 	}
-	inter.predictor.SetDisplayPreference(options.DisplayPreference)
+	inter.predictor.SetDisplayPreference(overlay.DisplayPreference(options.DisplayPreference))
 	inter.predictor.SetPredictOverwrite(options.DisplayPredictOverwrites)
+	// SetSendInterval with zero so initial predictions don't show underlined (until we get a measurement)
+	inter.predictor.SetSendInterval(0)
 
 	go inter.pullFromUpstream()
 	return inter
+}
+
+func (i *Interposer) ChangeDisplayPreference(preference DisplayPreference) {
+	i.emulatorMutex.Lock()
+	i.predictor.SetDisplayPreference(overlay.DisplayPreference(preference))
+	i.emulatorMutex.Unlock()
+}
+
+func (i *Interposer) ChangeOverwritePrediction(enabled bool) {
+	i.emulatorMutex.Lock()
+	i.predictor.SetPredictOverwrite(enabled)
+	i.emulatorMutex.Unlock()
+}
+
+func (i *Interposer) CloseEpoch(epoch uint64, openedAt time.Time) {
+	i.emulatorMutex.Lock()
+	pending := i.epoch > epoch
+	latency := time.Now().Sub(openedAt)
+	i.predictor.LocalFrameAcked(epoch)
+	i.predictor.LocalFrameLateAcked(epoch)
+	i.predictor.SetSendInterval(latency)
+
+	i.completeRemoteState = terminal.CopyFramebuffer(i.pendingRemoteState)
+	i.pendingEpoch = pending
+	if !pending {
+		var zero time.Time
+		i.PendingEpochStarted = zero
+	}
+
+	i.emulatorMutex.Unlock()
+
+	// notify update
+	select {
+	case i.upstreamErr <- nil:
+	default:
+		i.droppedUpdate = true
+	}
 }
 
 func (i *Interposer) pullFromUpstream() {
@@ -258,6 +337,7 @@ func (i *Interposer) pullFromUpstream() {
 			// act upon the emulator with the upstream data
 			i.emulatorMutex.Lock()
 			terminalToHost := []byte(i.emulator.Perform(string(upstreamBuffer[:n])))
+			i.pendingRemoteState = terminal.CopyFramebuffer(i.emulator.GetFramebuffer())
 			i.emulatorMutex.Unlock()
 			if len(terminalToHost) > 0 {
 				// write-back e.g. terminal reports generated by the emulator
@@ -272,6 +352,10 @@ func (i *Interposer) pullFromUpstream() {
 					}
 					return
 				}
+			}
+
+			if !i.pendingEpoch {
+				i.completeRemoteState = terminal.CopyFramebuffer(i.pendingRemoteState)
 			}
 		}
 
@@ -300,7 +384,8 @@ func (i *Interposer) Close() error {
 		_, _ = io.Copy(i.pending, bytes.NewReader(closeStr))
 		i.bufferMutex.Unlock()
 	}
-	return i.upstream.Close()
+	defer func() { _ = i.upstream.Close() }() // close the underlying reader if the asynk fails to, for some reason
+	return i.upstreamAsynk.Close()            // close the asynk attached to upstream
 }
 
 // Read printed output from the terminal.
@@ -345,27 +430,36 @@ func (i *Interposer) Read(p []byte) (int, error) {
 	}
 
 	// check if an upstream read is ready -- otherwise wait until one is received
+	isPrediction := false
 	if !i.droppedUpdate {
-		if err := <-i.upstreamErr; err != nil {
-			// got an error from upstream...
-			n := 0
-			if err == io.EOF {
-				// on EOF, send terminal close data too
-				closeData := []byte(i.display.Close())
-				n = copy(p[n:], closeData)
+		// choose between upstream data, and predicted data -- if either is pending
+		select {
+		case err := <-i.upstreamErr:
+			if err != nil {
+				// got an error from upstream...
+				n := 0
+				if err == io.EOF {
+					// on EOF, send terminal close data too
+					closeData := []byte(i.display.Close())
+					n = copy(p[n:], closeData)
+				}
+				return n, err
 			}
-			return n, err
+		case <-i.predictionNotification: // predicted data may be available -- apply prediction overlay on current state
+			isPrediction = true
 		}
-		// TODO make this into a select{} and choose between upstream data and predicted data, when prediction is added
 	}
 	i.droppedUpdate = false
 
-	// emit new output
+	// emit new output, based on the last completed epoch we've received
 	i.emulatorMutex.Lock()
-	newFrame := i.emulator.GetFramebuffer()
-	emission := []byte(i.display.NewFrame(i.initialized, i.state, newFrame))
+	remoteFramebufferCopy := terminal.CopyFramebuffer(i.completeRemoteState)
+	// with predictions applied...
+	i.predictor.Cull(remoteFramebufferCopy) // predictor must cull the target framebuffer before application
+	i.predictor.Apply(remoteFramebufferCopy)
+	emission := []byte(i.display.NewFrame(i.initialized, i.localState, remoteFramebufferCopy))
 	i.initialized = true
-	i.state = terminal.CopyFramebuffer(newFrame)
+	i.localState = remoteFramebufferCopy
 	i.emulatorMutex.Unlock()
 
 	n := copy(p, emission)
@@ -378,7 +472,9 @@ func (i *Interposer) Read(p []byte) (int, error) {
 		_, _ = io.Copy(i.pending, bytes.NewReader(emission))
 		i.bufferMutex.Unlock()
 	}
-	i.lastUpdated = now
+	if !isPrediction {
+		i.lastUpdated = now
+	}
 
 	return n, nil
 }
@@ -387,12 +483,45 @@ func (i *Interposer) Read(p []byte) (int, error) {
 func (i *Interposer) Write(p []byte) (int, error) {
 	terminalToHost := &bytes.Buffer{}
 	i.emulatorMutex.Lock()
+
+	now := time.Now()
+	if i.PendingEpochStarted.IsZero() {
+		// start tracking the start of a new un-acknowledged epoch
+		i.PendingEpochStarted = now
+	} else {
+		// tie SetSendInterval to the oldest un-acknowledged epoch -> triggers underlines when server response is slow
+		latency := now.Sub(i.PendingEpochStarted)
+		i.predictor.SetSendInterval(latency)
+	}
+
 	for _, b := range p {
+		// write new user bytes to predictor (and the selected framebuffer)
+		i.predictor.NewUserByte(b, i.localState)
 		s := i.emulator.Act(parser.MakeUserByte(int(b)))
 		terminalToHost.WriteString(s)
+		if b == 0x0c { // repaint
+			i.initialized = false
+		}
 	}
+	if len(p) > 0 {
+		// notify that a prediction might be available in response to this user input (non-blocking channel put)
+		select {
+		case i.predictionNotification <- true:
+		default:
+			i.droppedUpdate = true
+		}
+	}
+
+	// increment the epoch to track when we have a response from the server that reflects this input
+	i.epoch += 1
+	openedEpoch := i.epoch
+	i.pendingEpoch = true
+	i.predictor.LocalFrameSent(openedEpoch)
 	i.emulatorMutex.Unlock()
-	return i.upstream.Write(terminalToHost.Bytes())
+
+	n, err := i.upstreamAsynk.Write(terminalToHost.Bytes())
+	go i.openEpoch(i, openedEpoch, now)
+	return n, err
 }
 
 // Change the width and height of the interposed terminal, in response to e.g. SIGWINCH or equivalent signal.
@@ -400,16 +529,26 @@ func (i *Interposer) Resize(w, h int) {
 	i.emulatorMutex.Lock()
 	defer i.emulatorMutex.Unlock()
 	i.emulator.Act(parser.MakeResize(int64(w), int64(h)))
+	i.predictor.Reset()
 }
 
 // Produce a "patch" that transforms a fresh/reset terminal to one that matches the current display contents of the
-// interposed terminal.
-func (i *Interposer) CurrentContents() string {
+// interposed terminal. By default, this will show predictions in flight, but this can be disabled by the parameter.
+func (i *Interposer) CurrentContents(noPrediction bool) string {
 	i.emulatorMutex.Lock()
 	width, height := i.width, i.height
 	fb := i.emulator.GetFramebuffer()
+	if !noPrediction {
+		// copy it so we can apply predictor changes
+		fb = terminal.CopyFramebuffer(fb)
+	}
 	i.emulatorMutex.Unlock()
 
+	if !noPrediction {
+		i.predictor.Cull(fb)
+		i.predictor.Apply(fb)
+	}
 	blank := terminal.MakeFramebuffer(width, height)
+
 	return i.display.NewFrame(false, blank, fb)
 }
