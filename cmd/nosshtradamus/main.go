@@ -1,6 +1,8 @@
 package main
 
 import (
+	"gitlab.hive.thyth.com/chronostruct/go-mosh/pkg/mosh/overlay"
+
 	"nosshtradamus/internal/predictive"
 	"nosshtradamus/internal/sshproxy"
 
@@ -10,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -45,8 +48,6 @@ func main() {
 
 	var filter sshproxy.ChannelStreamFilter
 	if !noPrediction || fakeDelay > 0 {
-		// TODO Need to add a request filter on proxy client -> server direction enabling runtime control over the
-		// TODO prediction mode (and maybe underline behavior control).
 		filter = func(chanType string, sshChannel ssh.Channel) (io.ReadWriteCloser, sshproxy.ChannelRequestFilter) {
 			var wrapped io.ReadWriteCloser
 			var reqFilter sshproxy.ChannelRequestFilter
@@ -88,6 +89,55 @@ func main() {
 									if err == nil {
 										interposer.Resize(int(winch.Width), int(winch.Height))
 									}
+								case "nosshtradamus/displayPreference":
+									preference := strings.ToLower(string(request.Payload))
+									switch preference {
+									case "always":
+										interposer.ChangeDisplayPreference(overlay.PredictAlways)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									case "never":
+										interposer.ChangeDisplayPreference(overlay.PredictNever)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									case "adaptive":
+										interposer.ChangeDisplayPreference(overlay.PredictAdaptive)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									case "experimental":
+										interposer.ChangeDisplayPreference(overlay.PredictExperimental)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									}
+									continue // do not pass through the proxy
+								case "nosshtradamus/predictOverwrite":
+									setting := strings.ToLower(string(request.Payload))
+									switch setting {
+									case "true":
+										fallthrough
+									case "1":
+										interposer.ChangeOverwritePrediction(true)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									case "false":
+										fallthrough
+									case "0":
+										interposer.ChangeOverwritePrediction(false)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									default:
+										// invalid setting
+										if request.WantReply {
+											_ = request.Reply(false, nil)
+										}
+									}
+									continue // do not pass through the proxy
 								}
 								passthrough <- request
 							}
