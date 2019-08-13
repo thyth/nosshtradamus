@@ -1,8 +1,6 @@
 package main
 
 import (
-	"gitlab.hive.thyth.com/chronostruct/go-mosh/pkg/mosh/overlay"
-
 	"nosshtradamus/internal/predictive"
 	"nosshtradamus/internal/sshproxy"
 
@@ -93,22 +91,22 @@ func main() {
 									preference := strings.ToLower(string(request.Payload))
 									switch preference {
 									case "always":
-										interposer.ChangeDisplayPreference(overlay.PredictAlways)
+										interposer.ChangeDisplayPreference(predictive.PredictAlways)
 										if request.WantReply {
 											_ = request.Reply(true, nil)
 										}
 									case "never":
-										interposer.ChangeDisplayPreference(overlay.PredictNever)
+										interposer.ChangeDisplayPreference(predictive.PredictNever)
 										if request.WantReply {
 											_ = request.Reply(true, nil)
 										}
 									case "adaptive":
-										interposer.ChangeDisplayPreference(overlay.PredictAdaptive)
+										interposer.ChangeDisplayPreference(predictive.PredictAdaptive)
 										if request.WantReply {
 											_ = request.Reply(true, nil)
 										}
 									case "experimental":
-										interposer.ChangeDisplayPreference(overlay.PredictExperimental)
+										interposer.ChangeDisplayPreference(predictive.PredictExperimental)
 										if request.WantReply {
 											_ = request.Reply(true, nil)
 										}

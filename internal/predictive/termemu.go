@@ -79,9 +79,19 @@ type Interposer struct {
 	opened, initialized bool
 }
 
+type DisplayPreference overlay.DisplayPreference
+
+// bridge to the Mosh overlay parameters
+const (
+	PredictAlways = DisplayPreference(overlay.PredictAlways)
+	PredictNever = DisplayPreference(overlay.PredictNever)
+	PredictAdaptive = DisplayPreference(overlay.PredictAdaptive)
+	PredictExperimental = DisplayPreference(overlay.PredictExperimental)
+)
+
 type InterposerOptions struct {
 	CoalesceInterval         time.Duration
-	DisplayPreference        overlay.DisplayPreference
+	DisplayPreference        DisplayPreference
 	DisplayPredictOverwrites bool
 }
 
@@ -94,7 +104,7 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 		CoalesceInterval: time.Second / 60,
 
 		// Specifies the default prediction mode. Using "experimental", as it is the most aggressive.
-		DisplayPreference: overlay.PredictExperimental,
+		DisplayPreference: PredictExperimental,
 
 		// Specifies if the prediction should prefer overwrite predictions over insertion predictions. Insertion
 		// predictions tend to provide better experience for line editing.
@@ -272,7 +282,7 @@ func Interpose(rwc io.ReadWriteCloser, openEpoch func(interposer *Interposer, ep
 		opened:      false,
 		initialized: false,
 	}
-	inter.predictor.SetDisplayPreference(options.DisplayPreference)
+	inter.predictor.SetDisplayPreference(overlay.DisplayPreference(options.DisplayPreference))
 	inter.predictor.SetPredictOverwrite(options.DisplayPredictOverwrites)
 	// SetSendInterval with zero so initial predictions don't show underlined (until we get a measurement)
 	inter.predictor.SetSendInterval(0)
@@ -281,9 +291,9 @@ func Interpose(rwc io.ReadWriteCloser, openEpoch func(interposer *Interposer, ep
 	return inter
 }
 
-func (i *Interposer) ChangeDisplayPreference(preference overlay.DisplayPreference) {
+func (i *Interposer) ChangeDisplayPreference(preference DisplayPreference) {
 	i.emulatorMutex.Lock()
-	i.predictor.SetDisplayPreference(preference)
+	i.predictor.SetDisplayPreference(overlay.DisplayPreference(preference))
 	i.emulatorMutex.Unlock()
 }
 
