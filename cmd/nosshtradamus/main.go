@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -24,7 +25,7 @@ func main() {
 	flag.StringVar(&target, "target", "", "Target SSH host")
 	flag.BoolVar(&printPredictiveVersion, "version", false, "Display predictive backend version")
 	flag.BoolVar(&noPrediction, "nopredict", false, "Disable the mosh-based predictive backend")
-	flag.DurationVar(&fakeDelay, "fakeDelay", 0, "Artificial half-duplex latency added to sessions")
+	flag.DurationVar(&fakeDelay, "fakeDelay", 0, "Artificial roundtrip latency added to sessions")
 	flag.Parse()
 
 	if printPredictiveVersion {
@@ -45,8 +46,6 @@ func main() {
 
 	var filter sshproxy.ChannelStreamFilter
 	if !noPrediction || fakeDelay > 0 {
-		// TODO Need to add a request filter on proxy client -> server direction enabling runtime control over the
-		// TODO prediction mode (and maybe underline behavior control).
 		filter = func(chanType string, sshChannel ssh.Channel) (io.ReadWriteCloser, sshproxy.ChannelRequestFilter) {
 			var wrapped io.ReadWriteCloser
 			var reqFilter sshproxy.ChannelRequestFilter
@@ -58,31 +57,17 @@ func main() {
 				}
 				if !noPrediction {
 					options := predictive.GetDefaultInterposerOptions()
-					options.PreFilter = func(rwc io.ReadWriteCloser, i *predictive.Interposer) io.ReadWriteCloser {
-						return predictive.MakeEpochal(rwc, func(epochal *predictive.Epochal, epoch uint64) {
-							i.SpeculateEpoch(epoch)
-							pingStart := time.Now()
-							if i.PendingEpochStarted.IsZero() {
-								i.PendingEpochStarted = pingStart
-							}
-							fmt.Printf("Ping %d\n", epoch)
-							go func() {
-								if fakeDelay > 0 {
-									time.Sleep(fakeDelay)
-								}
-								_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
-								epochal.ResponseTo(epoch, pingStart)
-							}()
-						}, func(epoch uint64, pending bool, latency time.Duration) {
-							go func() {
-								// note: for some reason, a single frame delay/decoupling seems necessary here (hack)
-								time.Sleep(time.Second / 60)
-								fmt.Printf("Pong %d - Pending %v - (%v)\n", epoch, pending, latency)
-								i.CompleteEpoch(epoch, pending, latency)
-							}()
-						})
-					}
-					interposer := predictive.Interpose(wrapped, options)
+					interposer := predictive.Interpose(wrapped, func(interposer *predictive.Interposer, epoch uint64, openedAt time.Time) {
+						fmt.Printf("Ping %d\n", epoch)
+						if fakeDelay > 0 {
+							time.Sleep(fakeDelay)
+						}
+						_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
+
+						fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
+						time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
+						interposer.CloseEpoch(epoch, openedAt)
+					}, options)
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
 						return func(recipient ssh.Channel, sender <-chan *ssh.Request) {
 							// capture and process a subset of requests prior to forwarding them
@@ -102,6 +87,55 @@ func main() {
 									if err == nil {
 										interposer.Resize(int(winch.Width), int(winch.Height))
 									}
+								case "nosshtradamus/displayPreference":
+									preference := strings.ToLower(string(request.Payload))
+									switch preference {
+									case "always":
+										interposer.ChangeDisplayPreference(predictive.PredictAlways)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									case "never":
+										interposer.ChangeDisplayPreference(predictive.PredictNever)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									case "adaptive":
+										interposer.ChangeDisplayPreference(predictive.PredictAdaptive)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									case "experimental":
+										interposer.ChangeDisplayPreference(predictive.PredictExperimental)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									}
+									continue // do not pass through the proxy
+								case "nosshtradamus/predictOverwrite":
+									setting := strings.ToLower(string(request.Payload))
+									switch setting {
+									case "true":
+										fallthrough
+									case "1":
+										interposer.ChangeOverwritePrediction(true)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									case "false":
+										fallthrough
+									case "0":
+										interposer.ChangeOverwritePrediction(false)
+										if request.WantReply {
+											_ = request.Reply(true, nil)
+										}
+									default:
+										// invalid setting
+										if request.WantReply {
+											_ = request.Reply(false, nil)
+										}
+									}
+									continue // do not pass through the proxy
 								}
 								passthrough <- request
 							}
