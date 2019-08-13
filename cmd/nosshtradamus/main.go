@@ -58,19 +58,17 @@ func main() {
 				}
 				if !noPrediction {
 					options := predictive.GetDefaultInterposerOptions()
-					options.OpenEpoch = func(interposer *predictive.Interposer, epoch uint64, openedAt time.Time) {
+					interposer := predictive.Interpose(wrapped, func(interposer *predictive.Interposer, epoch uint64, openedAt time.Time) {
 						fmt.Printf("Ping %d\n", epoch)
-						go func() {
-							if fakeDelay > 0 {
-								time.Sleep(fakeDelay)
-							}
-							_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
-							fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
-							time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
-							interposer.CloseEpoch(epoch, openedAt)
-						}()
-					}
-					interposer := predictive.Interpose(wrapped, options)
+						if fakeDelay > 0 {
+							time.Sleep(fakeDelay)
+						}
+						_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
+
+						fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
+						time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
+						interposer.CloseEpoch(epoch, openedAt)
+					}, options)
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
 						return func(recipient ssh.Channel, sender <-chan *ssh.Request) {
 							// capture and process a subset of requests prior to forwarding them

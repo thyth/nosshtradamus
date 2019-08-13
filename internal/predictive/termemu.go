@@ -38,6 +38,13 @@ func GetVersion() string {
 // (e.g. a net.Conn, or ssh.Channel). Writes to the interposer are written both to the upstream and to the predictive
 // terminal state tracker. Reads from the interposer contain a combination of predictive speculations in response to
 // local writes, and state read from the upstream.
+//
+// In addition to the upstream io.ReadWriteCloser, the predictive interposer requires a callback function parameter
+// called "openEpoch". This callback will be called (asynchronously) by the interposer to designate the opening of a
+// predictive epoch upon writing new data. This callback must invoke the CloseEpoch function after the written data has
+// been acknowledged and reflected in the data read from upstream, designating which epoch is completed and pass through
+// the timestamp it was provided as an argument. This data cannot be carried in-band in the terminal octet stream, but
+// should be sent in a parallel channel that shares the same latency/throughput characteristics as the octet stream.
 type Interposer struct {
 	upstream        io.ReadWriteCloser
 	upstreamAsynk   io.WriteCloser
@@ -76,8 +83,6 @@ type InterposerOptions struct {
 	CoalesceInterval         time.Duration
 	DisplayPreference        overlay.DisplayPreference
 	DisplayPredictOverwrites bool
-
-	OpenEpoch func(interposer *Interposer, epoch uint64, openedAt time.Time)
 }
 
 // GetDefaultInterposerOptions produces a set of reasonable defaults for the interposer's prediction and coalescing
@@ -85,14 +90,15 @@ type InterposerOptions struct {
 func GetDefaultInterposerOptions() *InterposerOptions {
 	return &InterposerOptions{
 		// Specifies the time interval within which multiple updates to the terminal are coalesced into a single delta
-		// by Mosh. Default is 60 frames per second.
+		// by Mosh. Default is 60 frames per second (slightly higher than Mosh's default of 50 frames per second).
 		CoalesceInterval: time.Second / 60,
 
 		// Specifies the default prediction mode. Using "experimental", as it is the most aggressive.
 		DisplayPreference: overlay.PredictExperimental,
 
-		// Specifies if the prediction should include character overwrite predictions. Enabling for greater aggression.
-		DisplayPredictOverwrites: true,
+		// Specifies if the prediction should prefer overwrite predictions over insertion predictions. Insertion
+		// predictions tend to provide better experience for line editing.
+		DisplayPredictOverwrites: false,
 	}
 }
 
@@ -232,7 +238,8 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 //   - The purpose of Terminal::Display.open() is described as "Put terminal in application-cursor-key mode".
 //   - The purpose of Terminal::Display.close() is described as "Restore terminal and terminal-driver state".
 
-func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
+func Interpose(rwc io.ReadWriteCloser, openEpoch func(interposer *Interposer, epoch uint64, openedAt time.Time),
+	options *InterposerOptions) *Interposer {
 	inter := &Interposer{
 		upstream:      rwc,
 		upstreamAsynk: MakeAsynk(rwc, 8192),
@@ -260,7 +267,7 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 		predictor:              overlay.MakePredictionEngine(),
 		predictionNotification: make(chan interface{}),
 
-		openEpoch: options.OpenEpoch,
+		openEpoch: openEpoch,
 
 		opened:      false,
 		initialized: false,
@@ -272,6 +279,18 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 
 	go inter.pullFromUpstream()
 	return inter
+}
+
+func (i *Interposer) ChangeDisplayPreference(preference overlay.DisplayPreference) {
+	i.emulatorMutex.Lock()
+	i.predictor.SetDisplayPreference(preference)
+	i.emulatorMutex.Unlock()
+}
+
+func (i *Interposer) ChangeOverwritePrediction(enabled bool) {
+	i.emulatorMutex.Lock()
+	i.predictor.SetPredictOverwrite(enabled)
+	i.emulatorMutex.Unlock()
 }
 
 func (i *Interposer) CloseEpoch(epoch uint64, openedAt time.Time) {
@@ -491,7 +510,7 @@ func (i *Interposer) Write(p []byte) (int, error) {
 	i.emulatorMutex.Unlock()
 
 	n, err := i.upstreamAsynk.Write(terminalToHost.Bytes())
-	i.openEpoch(i, openedEpoch, now)
+	go i.openEpoch(i, openedEpoch, now)
 	return n, err
 }
 
