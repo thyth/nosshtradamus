@@ -61,10 +61,13 @@ type Interposer struct {
 	display    *terminal.Display     // used to generate deltas between framebuffers
 	emulator   *terminal.Complete    // processor of terminal control sequences
 
+	epoch                  uint64
 	pendingEpoch           bool                      // is an update pending (hack)
 	PendingEpochStarted    time.Time                 // HACK for tracking start of a pending epoch
 	predictor              *overlay.PredictionEngine // speculative/predictive engine
 	predictionNotification chan interface{}
+
+	openEpoch func(interposer *Interposer, epoch uint64, openedAt time.Time)
 
 	opened, initialized bool
 }
@@ -74,7 +77,7 @@ type InterposerOptions struct {
 	DisplayPreference        overlay.DisplayPreference
 	DisplayPredictOverwrites bool
 
-	PreFilter func(io.ReadWriteCloser, *Interposer) io.ReadWriteCloser
+	OpenEpoch func(interposer *Interposer, epoch uint64, openedAt time.Time)
 }
 
 // GetDefaultInterposerOptions produces a set of reasonable defaults for the interposer's prediction and coalescing
@@ -231,7 +234,9 @@ func GetDefaultInterposerOptions() *InterposerOptions {
 
 func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 	inter := &Interposer{
-		upstreamErr: make(chan error),
+		upstream:      rwc,
+		upstreamAsynk: MakeAsynk(rwc, 8192),
+		upstreamErr:   make(chan error),
 
 		coalesceInterval: options.CoalesceInterval,
 
@@ -250,9 +255,12 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 		display:    terminal.MakeDisplay(true),
 		emulator:   terminal.MakeComplete(1, 1),
 
+		epoch:                  0,
 		pendingEpoch:           false,
 		predictor:              overlay.MakePredictionEngine(),
 		predictionNotification: make(chan interface{}),
+
+		openEpoch: options.OpenEpoch,
 
 		opened:      false,
 		initialized: false,
@@ -262,23 +270,14 @@ func Interpose(rwc io.ReadWriteCloser, options *InterposerOptions) *Interposer {
 	// SetSendInterval with zero so initial predictions don't show underlined (until we get a measurement)
 	inter.predictor.SetSendInterval(0)
 
-	if options.PreFilter != nil {
-		rwc = options.PreFilter(rwc, inter)
-	}
-	inter.upstream = rwc
-	inter.upstreamAsynk = MakeAsynk(inter.upstream, 8192) // TODO make this flow through prefilter?
-
 	go inter.pullFromUpstream()
 	return inter
 }
 
-func (i *Interposer) SpeculateEpoch(epoch uint64) {
-	i.pendingEpoch = true
-	i.predictor.LocalFrameSent(epoch)
-}
-
-func (i *Interposer) CompleteEpoch(epoch uint64, pending bool, latency time.Duration) {
+func (i *Interposer) CloseEpoch(epoch uint64, openedAt time.Time) {
 	i.emulatorMutex.Lock()
+	pending := i.epoch > epoch
+	latency := time.Now().Sub(openedAt)
 	i.predictor.LocalFrameAcked(epoch)
 	i.predictor.LocalFrameLateAcked(epoch)
 	i.predictor.SetSendInterval(latency)
@@ -455,11 +454,17 @@ func (i *Interposer) Read(p []byte) (int, error) {
 func (i *Interposer) Write(p []byte) (int, error) {
 	terminalToHost := &bytes.Buffer{}
 	i.emulatorMutex.Lock()
-	// tie SetSendInterval to the oldest un-acknowledged epoch. this triggers underlines even a server response is slow
-	if !i.PendingEpochStarted.IsZero() {
-		latency := time.Now().Sub(i.PendingEpochStarted)
+
+	now := time.Now()
+	if i.PendingEpochStarted.IsZero() {
+		// start tracking the start of a new un-acknowledged epoch
+		i.PendingEpochStarted = now
+	} else {
+		// tie SetSendInterval to the oldest un-acknowledged epoch -> triggers underlines when server response is slow
+		latency := now.Sub(i.PendingEpochStarted)
 		i.predictor.SetSendInterval(latency)
 	}
+
 	for _, b := range p {
 		// write new user bytes to predictor (and the selected framebuffer)
 		i.predictor.NewUserByte(b, i.localState)
@@ -477,8 +482,17 @@ func (i *Interposer) Write(p []byte) (int, error) {
 			i.droppedUpdate = true
 		}
 	}
+
+	// increment the epoch to track when we have a response from the server that reflects this input
+	i.epoch += 1
+	openedEpoch := i.epoch
+	i.pendingEpoch = true
+	i.predictor.LocalFrameSent(openedEpoch)
 	i.emulatorMutex.Unlock()
-	return i.upstreamAsynk.Write(terminalToHost.Bytes())
+
+	n, err := i.upstreamAsynk.Write(terminalToHost.Bytes())
+	i.openEpoch(i, openedEpoch, now)
+	return n, err
 }
 
 // Change the width and height of the interposed terminal, in response to e.g. SIGWINCH or equivalent signal.

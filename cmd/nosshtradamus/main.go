@@ -24,7 +24,7 @@ func main() {
 	flag.StringVar(&target, "target", "", "Target SSH host")
 	flag.BoolVar(&printPredictiveVersion, "version", false, "Display predictive backend version")
 	flag.BoolVar(&noPrediction, "nopredict", false, "Disable the mosh-based predictive backend")
-	flag.DurationVar(&fakeDelay, "fakeDelay", 0, "Artificial half-duplex latency added to sessions")
+	flag.DurationVar(&fakeDelay, "fakeDelay", 0, "Artificial roundtrip latency added to sessions")
 	flag.Parse()
 
 	if printPredictiveVersion {
@@ -58,29 +58,17 @@ func main() {
 				}
 				if !noPrediction {
 					options := predictive.GetDefaultInterposerOptions()
-					options.PreFilter = func(rwc io.ReadWriteCloser, i *predictive.Interposer) io.ReadWriteCloser {
-						return predictive.MakeEpochal(rwc, func(epochal *predictive.Epochal, epoch uint64) {
-							i.SpeculateEpoch(epoch)
-							pingStart := time.Now()
-							if i.PendingEpochStarted.IsZero() {
-								i.PendingEpochStarted = pingStart
+					options.OpenEpoch = func(interposer *predictive.Interposer, epoch uint64, openedAt time.Time) {
+						fmt.Printf("Ping %d\n", epoch)
+						go func() {
+							if fakeDelay > 0 {
+								time.Sleep(fakeDelay)
 							}
-							fmt.Printf("Ping %d\n", epoch)
-							go func() {
-								if fakeDelay > 0 {
-									time.Sleep(fakeDelay)
-								}
-								_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
-								epochal.ResponseTo(epoch, pingStart)
-							}()
-						}, func(epoch uint64, pending bool, latency time.Duration) {
-							go func() {
-								// note: for some reason, a single frame delay/decoupling seems necessary here (hack)
-								time.Sleep(time.Second / 60)
-								fmt.Printf("Pong %d - Pending %v - (%v)\n", epoch, pending, latency)
-								i.CompleteEpoch(epoch, pending, latency)
-							}()
-						})
+							_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
+							fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
+							time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
+							interposer.CloseEpoch(epoch, openedAt)
+						}()
 					}
 					interposer := predictive.Interpose(wrapped, options)
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
