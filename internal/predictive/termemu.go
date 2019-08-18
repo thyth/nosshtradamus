@@ -86,8 +86,8 @@ type Interposer struct {
 	emulator   *terminal.Complete    // processor of terminal control sequences
 
 	epoch                  uint64
-	pendingEpoch           bool                      // is an update pending (hack)
-	PendingEpochStarted    time.Time                 // HACK for tracking start of a pending epoch
+	pendingEpoch           bool                      // if an update is pending
+	pendingEpochStarted    time.Time                 // tracking start of a pending epoch to calculate roundtrip latency
 	predictor              *overlay.PredictionEngine // speculative/predictive engine
 	predictionNotification chan interface{}
 
@@ -332,7 +332,7 @@ func (i *Interposer) CloseEpoch(epoch uint64, openedAt time.Time) {
 	i.pendingEpoch = pending
 	if !pending {
 		var zero time.Time
-		i.PendingEpochStarted = zero
+		i.pendingEpochStarted = zero
 	}
 
 	i.emulatorMutex.Unlock()
@@ -502,12 +502,12 @@ func (i *Interposer) Write(p []byte) (int, error) {
 	i.emulatorMutex.Lock()
 
 	now := time.Now()
-	if i.PendingEpochStarted.IsZero() {
+	if i.pendingEpochStarted.IsZero() {
 		// start tracking the start of a new un-acknowledged epoch
-		i.PendingEpochStarted = now
+		i.pendingEpochStarted = now
 	} else {
 		// tie SetSendInterval to the oldest un-acknowledged epoch -> triggers underlines when server response is slow
-		latency := now.Sub(i.PendingEpochStarted)
+		latency := now.Sub(i.pendingEpochStarted)
 		i.predictor.SetSendInterval(latency)
 	}
 
