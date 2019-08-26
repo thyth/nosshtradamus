@@ -1,0 +1,795 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:xhtml="http://www.w3.org/1999/xhtml"
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   id="svg192"
+   style="background-color: rgb(255, 255, 255);"
+   viewBox="-0.5 -0.5 484 581"
+   height="581px"
+   width="484px"
+   version="1.1">
+  <metadata
+     id="metadata196">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <defs
+     id="defs2" />
+  <rect
+     x="0"
+     y="260"
+     width="160"
+     height="320"
+     pointer-events="none"
+     id="rect4"
+     style="fill:#fff2cc;stroke:#d6b656" />
+  <rect
+     x="10"
+     y="0"
+     width="120"
+     height="60"
+     pointer-events="none"
+     id="rect6"
+     style="fill:#ffffff;stroke:#000000" />
+  <g
+     transform="translate(21.5,16.5)"
+     id="g12">
+    <switch
+       id="switch10">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="96"
+         height="26"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 98px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">Terminal Emulator<xhtml:br />
+(e.g. xterm)<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="48"
+         y="19"
+         font-size="12px"
+         id="text8"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">Terminal Emulator&lt;br&gt;(e.g. xterm)&lt;br&gt;</text>
+    </switch>
+  </g>
+  <rect
+     x="10"
+     y="60"
+     width="120"
+     height="60"
+     pointer-events="none"
+     id="rect14"
+     style="fill:#ffffff;stroke:#000000" />
+  <g
+     transform="translate(24.5,83.5)"
+     id="g20">
+    <switch
+       id="switch18">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="90"
+         height="12"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 90px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">Pseudo Terminal</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="45"
+         y="12"
+         font-size="12px"
+         id="text16"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">Pseudo Terminal</text>
+    </switch>
+  </g>
+  <rect
+     x="70"
+     y="335"
+     width="60"
+     height="60"
+     pointer-events="none"
+     id="rect22"
+     style="fill:#e1d5e7;stroke:#9673a6" />
+  <g
+     transform="translate(72.5,351.5)"
+     id="g28">
+    <switch
+       id="switch26">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="54"
+         height="26"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 54px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">Prediction<xhtml:br />
+Engine<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="27"
+         y="19"
+         font-size="12px"
+         id="text24"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">[Not supported by viewer]</text>
+    </switch>
+  </g>
+  <rect
+     x="360"
+     y="0"
+     width="120"
+     height="60"
+     pointer-events="none"
+     id="rect30"
+     style="fill:#ffffff;stroke:#000000" />
+  <g
+     transform="translate(390.5,16.5)"
+     id="g36">
+    <switch
+       id="switch34">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="58"
+         height="26"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 60px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">Application<xhtml:br />
+(e.g. bash)<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="29"
+         y="19"
+         font-size="12px"
+         id="text32"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">[Not supported by viewer]</text>
+    </switch>
+  </g>
+  <rect
+     x="360"
+     y="60"
+     width="120"
+     height="60"
+     pointer-events="none"
+     id="rect38"
+     style="fill:#ffffff;stroke:#000000" />
+  <g
+     transform="translate(374.5,83.5)"
+     id="g44">
+    <switch
+       id="switch42">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="90"
+         height="12"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 90px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">Pseudo Terminal</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="45"
+         y="12"
+         font-size="12px"
+         id="text40"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">Pseudo Terminal</text>
+    </switch>
+  </g>
+  <path
+     d="m 100,495 q 0,0 0,-13.63"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path46"
+     style="fill:none;stroke:#000000;stroke-miterlimit:10" />
+  <path
+     d="m 100,476.12 3.5,7 -3.5,-1.75 -3.5,1.75 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path48"
+     style="fill:#000000;stroke:#000000;stroke-miterlimit:10" />
+  <rect
+     x="10"
+     y="495"
+     width="120"
+     height="40"
+     pointer-events="none"
+     id="rect50"
+     style="fill:#d5e8d4;stroke:#82b366" />
+  <g
+     transform="translate(30.5,501.5)"
+     id="g56">
+    <switch
+       id="switch54">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="78"
+         height="26"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 80px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">Mosh Terminal<xhtml:br />
+Emulator<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="39"
+         y="19"
+         font-size="12px"
+         id="text52"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">Mosh Terminal&lt;br&gt;Emulator&lt;br&gt;</text>
+    </switch>
+  </g>
+  <path
+     d="m 70,186.37 q 0,0 0,82.26"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path58"
+     style="fill:none;stroke:#000000;stroke-miterlimit:10" />
+  <path
+     d="m 70,181.12 3.5,7 -3.5,-1.75 -3.5,1.75 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path60"
+     style="fill:#000000;stroke:#000000;stroke-miterlimit:10" />
+  <path
+     d="m 70,273.88 -3.5,-7 3.5,1.75 3.5,-1.75 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path62"
+     style="fill:#000000;stroke:#000000;stroke-miterlimit:10" />
+  <g
+     transform="translate(19.5,208.5)"
+     id="g68">
+    <switch
+       id="switch66">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="101"
+         height="40"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; white-space: nowrap; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;background-color:#ffffff;">
+            <xhtml:span>∞ bandwidth<xhtml:br />
+instant<xhtml:br />
+local SSH TCP link</xhtml:span>
+          </xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="51"
+         y="26"
+         font-size="12px"
+         id="text64"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">[Not supported by viewer]</text>
+    </switch>
+  </g>
+  <rect
+     x="10"
+     y="120"
+     width="120"
+     height="60"
+     pointer-events="none"
+     id="rect70"
+     style="fill:#ffffff;stroke:#000000" />
+  <g
+     transform="translate(40.5,143.5)"
+     id="g76">
+    <switch
+       id="switch74">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="58"
+         height="12"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 60px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">SSH Client</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="29"
+         y="12"
+         font-size="12px"
+         id="text72"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">SSH Client</text>
+    </switch>
+  </g>
+  <path
+     d="m 360,135 q -115,0 -115,204 0,204 -108.63,204"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path78"
+     style="fill:none;stroke:#000000;stroke-miterlimit:10" />
+  <path
+     d="m 131.12,543 7,-3.5 -1.75,3.5 1.75,3.5 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path80"
+     style="fill:#000000;stroke:#000000;stroke-miterlimit:10" />
+  <g
+     transform="translate(200.5,163.5)"
+     id="g86">
+    <switch
+       id="switch84">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="59"
+         height="54"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; white-space: nowrap; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;background-color:#ffffff;">Screen<xhtml:br />
+Print<xhtml:br />
+Octets<xhtml:br />
+(Slow Link)<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="30"
+         y="33"
+         font-size="12px"
+         id="text82"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">[Not supported by viewer]</text>
+    </switch>
+  </g>
+  <path
+     d="m 450,180 q 0,280 -313.63,280"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path88"
+     style="fill:none;stroke:#6c8ebf;stroke-miterlimit:10;stroke-dasharray:3, 3" />
+  <path
+     d="m 131.12,460 7,-3.5 -1.75,3.5 1.75,3.5 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path90"
+     style="fill:#6c8ebf;stroke:#6c8ebf;stroke-miterlimit:10" />
+  <g
+     transform="translate(397.5,363.5)"
+     id="g96">
+    <switch
+       id="switch94">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="85"
+         height="54"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; white-space: nowrap; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;background-color:#ffffff;">Numbered<xhtml:br />
+Side-Band<xhtml:br />
+Pong Response<xhtml:br />
+(Slow Link)<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="43"
+         y="33"
+         font-size="12px"
+         id="text92"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">[Not supported by viewer]</text>
+    </switch>
+  </g>
+  <rect
+     x="360"
+     y="120"
+     width="120"
+     height="60"
+     pointer-events="none"
+     id="rect98"
+     style="fill:#ffffff;stroke:#000000" />
+  <g
+     transform="translate(387.5,143.5)"
+     id="g104">
+    <switch
+       id="switch102">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="64"
+         height="12"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 64px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">SSH Server</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="32"
+         y="12"
+         font-size="12px"
+         id="text100"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">SSH Server</text>
+    </switch>
+  </g>
+  <rect
+     x="10"
+     y="275"
+     width="120"
+     height="30"
+     pointer-events="none"
+     id="rect106"
+     style="fill:#ffffff;stroke:#000000" />
+  <g
+     transform="translate(20.5,283.5)"
+     id="g112">
+    <switch
+       id="switch110">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="98"
+         height="12"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 98px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">SSH Proxy Server</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="49"
+         y="12"
+         font-size="12px"
+         id="text108"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">SSH Proxy Server</text>
+    </switch>
+  </g>
+  <path
+     d="m 40,335 q 0,30 23.63,30"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path114"
+     style="fill:none;stroke:#000000;stroke-miterlimit:10" />
+  <path
+     d="m 68.88,365 -7,3.5 1.75,-3.5 -1.75,-3.5 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path116"
+     style="fill:#000000;stroke:#000000;stroke-miterlimit:10" />
+  <path
+     d="m 40,335 v 73.63"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path118"
+     style="fill:none;stroke:#000000;stroke-miterlimit:10" />
+  <path
+     d="m 40,413.88 -3.5,-7 3.5,1.75 3.5,-1.75 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path120"
+     style="fill:#000000;stroke:#000000;stroke-miterlimit:10" />
+  <rect
+     x="10"
+     y="305"
+     width="120"
+     height="30"
+     pointer-events="none"
+     id="rect122"
+     style="fill:#ffffff;stroke:#000000" />
+  <g
+     transform="translate(28.5,313.5)"
+     id="g128">
+    <switch
+       id="switch126">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="82"
+         height="12"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 84px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">Virtual Terminal</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="41"
+         y="12"
+         font-size="12px"
+         id="text124"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">Virtual Terminal</text>
+    </switch>
+  </g>
+  <rect
+     x="70"
+     y="415"
+     width="60"
+     height="30"
+     pointer-events="none"
+     id="rect130"
+     style="fill:#dae8fc;stroke:#6c8ebf" />
+  <g
+     transform="translate(73.5,416.5)"
+     id="g136">
+    <switch
+       id="switch134">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="52"
+         height="26"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 52px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">Complete<xhtml:br />
+Screen<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="26"
+         y="19"
+         font-size="12px"
+         id="text132"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">[Not supported by viewer]</text>
+    </switch>
+  </g>
+  <path
+     d="m 130,460 q 20,0 20,-15 0,-15 -13.63,-15"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path138"
+     style="fill:none;stroke:#000000;stroke-miterlimit:10" />
+  <path
+     d="m 131.12,430 7,-3.5 -1.75,3.5 1.75,3.5 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path140"
+     style="fill:#000000;stroke:#000000;stroke-miterlimit:10" />
+  <rect
+     x="70"
+     y="445"
+     width="60"
+     height="30"
+     pointer-events="none"
+     id="rect142"
+     style="fill:#dae8fc;stroke:#6c8ebf" />
+  <g
+     transform="translate(75.5,446.5)"
+     id="g148">
+    <switch
+       id="switch146">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="48"
+         height="26"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 50px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">Incoming<xhtml:br />
+Screen<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="24"
+         y="19"
+         font-size="12px"
+         id="text144"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">[Not supported by viewer]</text>
+    </switch>
+  </g>
+  <path
+     d="m 40,445 q 0,0 0,43.63"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path150"
+     style="fill:none;stroke:#000000;stroke-miterlimit:10" />
+  <path
+     d="m 40,493.88 -3.5,-7 3.5,1.75 3.5,-1.75 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path152"
+     style="fill:#000000;stroke:#000000;stroke-miterlimit:10" />
+  <rect
+     x="10"
+     y="415"
+     width="60"
+     height="30"
+     pointer-events="none"
+     id="rect154"
+     style="fill:#dae8fc;stroke:#6c8ebf" />
+  <g
+     transform="translate(19.5,416.5)"
+     id="g160">
+    <switch
+       id="switch158">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="40"
+         height="26"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 42px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">Key<xhtml:br />
+Strokes<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="20"
+         y="19"
+         font-size="12px"
+         id="text156"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">[Not supported by viewer]</text>
+    </switch>
+  </g>
+  <path
+     d="M 130,558 Q 270,558 270,361.5 270,165 353.63,165"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path162"
+     style="fill:none;stroke:#000000;stroke-miterlimit:10" />
+  <path
+     d="m 358.88,165 -7,3.5 1.75,-3.5 -1.75,-3.5 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path164"
+     style="fill:#000000;stroke:#000000;stroke-miterlimit:10" />
+  <g
+     transform="translate(290.5,220.5)"
+     id="g170">
+    <switch
+       id="switch168">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="59"
+         height="40"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; white-space: nowrap; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;background-color:#ffffff;">Keystroke<xhtml:br />
+Octets<xhtml:br />
+(Slow Link)<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="30"
+         y="26"
+         font-size="12px"
+         id="text166"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">[Not supported by viewer]</text>
+    </switch>
+  </g>
+  <path
+     d="M 55,445 Q 55,570 222.5,570 390,570 390,186.37"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path172"
+     style="fill:none;stroke:#b85450;stroke-miterlimit:10;stroke-dasharray:3, 3" />
+  <path
+     d="m 390,181.12 3.5,7 -3.5,-1.75 -3.5,1.75 z"
+     stroke-miterlimit="10"
+     pointer-events="none"
+     id="path174"
+     style="fill:#b85450;stroke:#b85450;stroke-miterlimit:10" />
+  <g
+     transform="translate(344.5,493.5)"
+     id="g180">
+    <switch
+       id="switch178">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="72"
+         height="54"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; white-space: nowrap; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;background-color:#ffffff;">Numbered<xhtml:br />
+Side-Band<xhtml:br />
+Ping Request<xhtml:br />
+(Slow Link)<xhtml:br />
+</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="36"
+         y="33"
+         font-size="12px"
+         id="text176"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">[Not supported by viewer]</text>
+    </switch>
+  </g>
+  <rect
+     x="10"
+     y="535"
+     width="120"
+     height="30"
+     pointer-events="none"
+     id="rect182"
+     style="fill:#ffffff;stroke:#000000" />
+  <g
+     transform="translate(23.5,543.5)"
+     id="g188">
+    <switch
+       id="switch186">
+      <foreignObject
+         style="overflow:visible;"
+         pointer-events="all"
+         width="92"
+         height="12"
+         requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+        <xhtml:div
+           style="display: inline-block; font-size: 12px; font-family: Helvetica; color: rgb(0, 0, 0); line-height: 1.2; vertical-align: top; width: 94px; white-space: nowrap; overflow-wrap: normal; text-align: center;">
+          <xhtml:div
+             style="display:inline-block;text-align:inherit;text-decoration:inherit;white-space:normal;">SSH Proxy Client</xhtml:div>
+        </xhtml:div>
+      </foreignObject>
+      <text
+         x="46"
+         y="12"
+         font-size="12px"
+         id="text184"
+         style="font-size:12px;font-family:Helvetica;text-anchor:middle;fill:#000000">SSH Proxy Client</text>
+    </switch>
+  </g>
+  <path
+     style="fill:none;stroke:#000000;stroke-miterlimit:10"
+     id="path4806"
+     pointer-events="none"
+     stroke-miterlimit="10"
+     d="m 100,415 q 0,0 0,-13.63" />
+  <path
+     style="fill:#000000;stroke:#000000;stroke-miterlimit:10"
+     id="path4808"
+     pointer-events="none"
+     stroke-miterlimit="10"
+     d="m 100,396.12 3.5,7 -3.5,-1.75 -3.5,1.75 z" />
+</svg>
