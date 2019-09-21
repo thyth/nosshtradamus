@@ -21,6 +21,7 @@ import (
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/ssh"
 
+	"fmt"
 	"io"
 	"net"
 	"time"
@@ -33,6 +34,14 @@ type ProxyConfig struct {
 	AuthMethods      []ssh.AuthMethod
 	Banner           func(conn ssh.ConnMetadata) string
 	ReportAuthErr    bool
+	ExtraQuestions   chan *ProxiedAuthQuestion
+}
+
+type ProxiedAuthQuestion struct {
+	Message  string
+	Prompt   string
+	Echo     bool
+	OnAnswer func(string) bool
 }
 
 type HostKeyProvider func() (ssh.Signer, error)
@@ -107,8 +116,27 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 			}
 			proxyConn = clientConn
 
-			// send blank challenge so that the user is not prompted to authenticate
-			_, _ = challenge(user, "", []string{}, []bool{})
+			asked := false
+			if configOpts.ExtraQuestions != nil {
+				// ask any supplemental questions; one at a time
+				for question := range configOpts.ExtraQuestions {
+					asked = true
+					answers, err := challenge(user, question.Message, []string{question.Prompt}, []bool{question.Echo})
+					if err != nil {
+						return nil, err
+					}
+					if len(answers) != 1 {
+						return nil, fmt.Errorf("expected 1 answer, got %d", len(answers))
+					}
+					if !question.OnAnswer(answers[0]) {
+						return nil, fmt.Errorf("wrong answer to %s", question.Message)
+					}
+				}
+			}
+			if !asked {
+				// send blank challenge so that the user is not prompted to authenticate
+				_, _ = challenge(user, "", []string{}, []bool{})
+			}
 			return nil, nil
 		},
 		MaxAuthTries:   1,
