@@ -101,20 +101,21 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 		KeyboardInteractiveCallback: func(conn ssh.ConnMetadata,
 			challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
 			user := conn.User()
-			// connecting to the remote host only when the proxy has enough information to make the connection
-			clientConn, err := ssh.Dial("tcp", target.String(), &ssh.ClientConfig{
-				User:            user,
-				Timeout:         defaultTimeout,
-				HostKeyCallback: keyCallback,
-				Auth:            auth,
-			})
-			if err != nil {
-				if reportAuthErr {
-					_, _ = challenge(user, err.Error(), []string{}, []bool{})
+			var connErr error
+			established := make(chan interface{})
+			go func() {
+				// connecting to the remote host only when the proxy has enough information to make the connection
+				proxyConn, connErr = ssh.Dial("tcp", target.String(), &ssh.ClientConfig{
+					User:            user,
+					Timeout:         defaultTimeout,
+					HostKeyCallback: keyCallback,
+					Auth:            auth,
+				})
+				close(established)
+				if configOpts.ExtraQuestions != nil {
+					close(configOpts.ExtraQuestions)
 				}
-				return nil, err
-			}
-			proxyConn = clientConn
+			}()
 
 			asked := false
 			if configOpts.ExtraQuestions != nil {
@@ -131,13 +132,22 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 					if !question.OnAnswer(answers[0]) {
 						return nil, fmt.Errorf("wrong answer to %s", question.Message)
 					}
+					if connErr != nil {
+						break
+					}
 				}
 			}
-			if !asked {
-				// send blank challenge so that the user is not prompted to authenticate
-				_, _ = challenge(user, "", []string{}, []bool{})
+
+			<-established
+			if !asked || (reportAuthErr && connErr != nil) {
+				msg := ""
+				if connErr != nil {
+					msg = connErr.Error()
+				}
+				_, _ = challenge(user, msg, []string{}, []bool{})
 			}
-			return nil, nil
+
+			return nil, connErr
 		},
 		MaxAuthTries:   1,
 		BannerCallback: banner,
