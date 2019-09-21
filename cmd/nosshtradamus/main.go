@@ -62,6 +62,7 @@ func main() {
 	var optionArgs arrayFlags
 	var identityArgs arrayFlags
 	agentForward := false
+	dumbAuth := false
 
 	flag.IntVar(&port, "port", 0, "Proxy listen port")
 	flag.StringVar(&target, "target", "", "Target SSH host")
@@ -72,6 +73,7 @@ func main() {
 	flag.Var(&optionArgs, "o", "Proxy SSH client options (repeatable)")
 	flag.Var(&identityArgs, "i", "Proxy SSH client identity file paths (repeatable)")
 	flag.BoolVar(&agentForward, "A", false, "Allow proxy SSH client to forward agent")
+	flag.BoolVar(&dumbAuth, "dumbauth", false, "Use 'dumb' authentication (send blank password)")
 	flag.Parse()
 
 	// create a map of SSH client options to their values
@@ -142,6 +144,44 @@ func main() {
 	}
 	if len(sshIdentities) == 1 && sshIdentities[0] == "/dev/null" {
 		sshIdentities = nil
+	}
+
+	authMethods := sshproxy.DefaultAuthMethods
+	var extraQuestions chan *sshproxy.ProxiedAuthQuestion
+	if !dumbAuth {
+		extraQuestions = make(chan *sshproxy.ProxiedAuthQuestion)
+		authMethods = []ssh.AuthMethod{
+			ssh.KeyboardInteractive(func(_, instruction string, questions []string, echos []bool) ([]string, error) {
+				var answers []string
+				answer := make(chan string, 1)
+				for idx, question := range questions {
+					echo := echos[idx]
+					extraQuestions <- &sshproxy.ProxiedAuthQuestion{
+						Message: instruction,
+						Prompt: question,
+						Echo: echo,
+						OnAnswer: func(response string) bool {
+							answer <- response
+							return true
+						},
+					}
+					answers = append(answers, <-answer)
+				}
+				return answers, nil
+			}),
+			ssh.PasswordCallback(func() (string, error) {
+				passwd := make(chan string, 1)
+				extraQuestions <- &sshproxy.ProxiedAuthQuestion{
+					Prompt: "[*] Password",
+					Echo: false,
+					OnAnswer: func(password string) bool {
+						passwd <- password
+						return true
+					},
+				}
+				return <-passwd, nil
+			}),
+		}
 	}
 
 	if printPredictiveVersion {
@@ -281,11 +321,12 @@ func main() {
 			KeyProvider:      sshproxy.GenHostKey,
 			TargetKeyChecker: hostKeyChecker,
 			ChannelFilter:    filter,
-			AuthMethods:      sshproxy.DefaultAuthMethods,
+			AuthMethods:      authMethods,
 			Banner: func(conn ssh.ConnMetadata) string {
 				return fmt.Sprintf("Nosshtradamus proxying ~ %s@%v\n", conn.User(), target)
 			},
-			ReportAuthErr: true,
+			ReportAuthErr:  true,
+			ExtraQuestions: extraQuestions,
 		})
 		if err != nil {
 			panic(err)
