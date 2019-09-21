@@ -91,12 +91,14 @@ func main() {
 	disableAgent := false
 	dumbAuth := false
 	authErrDetails := false
+	printTiming := false
 
 	flag.IntVar(&port, "port", 0, "Proxy listen port")
 	flag.StringVar(&target, "target", "", "Target SSH host")
 	flag.BoolVar(&printPredictiveVersion, "version", false, "Display predictive backend version")
 	flag.BoolVar(&noPrediction, "nopredict", false, "Disable the mosh-based predictive backend")
 	flag.DurationVar(&fakeDelay, "fakeDelay", 0, "Artificial roundtrip latency added to sessions")
+	flag.BoolVar(&printTiming, "printTiming", false, "Print epoch synchronization timing messages")
 
 	flag.Var(&optionArgs, "o", "Proxy SSH client options (repeatable)")
 	flag.Var(&identityArgs, "i", "Proxy SSH client identity file paths (repeatable)")
@@ -314,13 +316,17 @@ func main() {
 				if !noPrediction {
 					options := predictive.GetDefaultInterposerOptions()
 					interposer := predictive.Interpose(wrapped, func(interposer *predictive.Interposer, epoch uint64, openedAt time.Time) {
-						fmt.Printf("Ping %d\n", epoch)
+						if printTiming {
+							fmt.Printf("Ping %d\n", epoch)
+						}
 						if fakeDelay > 0 {
 							time.Sleep(fakeDelay)
 						}
 						_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
 
-						fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
+						if printTiming {
+							fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
+						}
 						time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
 						interposer.CloseEpoch(epoch, openedAt)
 					}, options)
