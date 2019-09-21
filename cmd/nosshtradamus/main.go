@@ -27,9 +27,30 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"time"
 )
+
+// arrayFlags: flag.Value interface implementing type to collect multiple values of the same argument
+type arrayFlags []string
+
+func (_ *arrayFlags) String() string      { return "" }
+func (af *arrayFlags) Set(v string) error { *af = append(*af, v); return nil }
+
+func truthy(s string) bool {
+	s = strings.ToLower(s)
+	switch s {
+	case "yes":
+		fallthrough
+	case "1":
+		fallthrough
+	case "true":
+		return true
+	default:
+		return false
+	}
+}
 
 func main() {
 	port := 0
@@ -37,13 +58,82 @@ func main() {
 	printPredictiveVersion := false
 	noPrediction := false
 	var fakeDelay time.Duration
+	var optionArgs arrayFlags
+	var identityArgs arrayFlags
+	agentForward := false
 
 	flag.IntVar(&port, "port", 0, "Proxy listen port")
 	flag.StringVar(&target, "target", "", "Target SSH host")
 	flag.BoolVar(&printPredictiveVersion, "version", false, "Display predictive backend version")
 	flag.BoolVar(&noPrediction, "nopredict", false, "Disable the mosh-based predictive backend")
 	flag.DurationVar(&fakeDelay, "fakeDelay", 0, "Artificial roundtrip latency added to sessions")
+
+	flag.Var(&optionArgs, "o", "Proxy SSH client options (repeatable)")
+	flag.Var(&identityArgs, "i", "Proxy SSH client identity file paths (repeatable)")
+	flag.BoolVar(&agentForward, "A", false, "Allow proxy SSH client to forward agent")
 	flag.Parse()
+
+	// create a map of SSH client options to their values
+	sshClientOptions := map[string]string{}
+	for _, option := range optionArgs {
+		kv := strings.SplitN(option, "=", 2)
+		if len(kv) == 2 {
+			sshClientOptions[kv[0]] = kv[1]
+		}
+	}
+
+	// default to checking known hosts from $HOME/.ssh/known_hosts
+	userKnownHostsFile := ""
+	if home, ok := os.LookupEnv("HOME"); ok {
+		userKnownHostsFile = home + "/.ssh/known_hosts"
+	}
+	// unless overridden by the client
+	if specifiedKnownHost, ok := sshClientOptions["UserKnownHostsFile"]; ok {
+		userKnownHostsFile = specifiedKnownHost
+	}
+
+	// default to checking host keys
+	strictHostChecking := true
+	if specifiedStrictChecking, ok := sshClientOptions["StrictHostKeyChecking"]; ok {
+		strictHostChecking = truthy(specifiedStrictChecking)
+	}
+	if strictHostChecking && userKnownHostsFile == "" {
+		// asked for strict host key checking, but no known hosts file... die
+		panic("Strict host key checking enabled, but no known_hosts provided")
+	}
+
+	// detect between 3 different modes of identity key files:
+	// - none provided: use default of $HOME/.ssh/id_rsa and $HOME/.ssh/id_ed25519 (if $HOME exists)
+	// - one provided equal to /dev/null: empty out the array (don't use any identity files)
+	// - else: specifies a set of identity files to use (if not already in client's agent), in attempt order
+	sshIdentitiesSet := map[string]string{}
+	var sshIdentities []string
+	if len(identityArgs) == 0 {
+		defaultIdentities := []string{"/.ssh/id_rsa", "/.ssh/id_ed25519"}
+		if home, ok := os.LookupEnv("HOME"); ok {
+			for _, identity := range defaultIdentities {
+				fn := home + identity
+				if _, err := os.Stat(fn); !os.IsNotExist(err) {
+					if _, exists := sshIdentitiesSet[fn]; !exists {
+						sshIdentitiesSet[fn] = fn
+						sshIdentities = append(sshIdentities, fn)
+					}
+				}
+			}
+		}
+	} else {
+		for _, fn := range identityArgs {
+			if _, err := os.Stat(fn); !os.IsNotExist(err) {
+				if _, exists := sshIdentitiesSet[fn]; !exists {
+					sshIdentitiesSet[fn] = fn
+					sshIdentities = append(sshIdentities, fn)
+				}
+			}
+		}
+	}
+	if len(sshIdentities) == 1 && sshIdentities[0] == "/dev/null" {
+		sshIdentities = nil
+	}
 
 	if printPredictiveVersion {
 		if noPrediction {
