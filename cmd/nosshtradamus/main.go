@@ -63,6 +63,7 @@ func main() {
 	var identityArgs arrayFlags
 	agentForward := false
 	dumbAuth := false
+	authErrDetails := false
 
 	flag.IntVar(&port, "port", 0, "Proxy listen port")
 	flag.StringVar(&target, "target", "", "Target SSH host")
@@ -74,6 +75,7 @@ func main() {
 	flag.Var(&identityArgs, "i", "Proxy SSH client identity file paths (repeatable)")
 	flag.BoolVar(&agentForward, "A", false, "Allow proxy SSH client to forward agent")
 	flag.BoolVar(&dumbAuth, "dumbauth", false, "Use 'dumb' authentication (send blank password)")
+	flag.BoolVar(&authErrDetails, "authErr", false, "Show details on authentication errors with target")
 	flag.Parse()
 
 	// create a map of SSH client options to their values
@@ -158,8 +160,8 @@ func main() {
 					echo := echos[idx]
 					extraQuestions <- &sshproxy.ProxiedAuthQuestion{
 						Message: instruction,
-						Prompt: question,
-						Echo: echo,
+						Prompt:  question,
+						Echo:    echo,
 						OnAnswer: func(response string) bool {
 							answer <- response
 							return true
@@ -173,7 +175,7 @@ func main() {
 				passwd := make(chan string, 1)
 				extraQuestions <- &sshproxy.ProxiedAuthQuestion{
 					Prompt: "[*] Password",
-					Echo: false,
+					Echo:   false,
 					OnAnswer: func(password string) bool {
 						passwd <- password
 						return true
@@ -325,7 +327,7 @@ func main() {
 			Banner: func(conn ssh.ConnMetadata) string {
 				return fmt.Sprintf("Nosshtradamus proxying ~ %s@%v\n", conn.User(), target)
 			},
-			ReportAuthErr:  true,
+			ReportAuthErr:  authErrDetails,
 			ExtraQuestions: extraQuestions,
 		})
 		if err != nil {
