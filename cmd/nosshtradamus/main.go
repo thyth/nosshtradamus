@@ -22,6 +22,7 @@ import (
 	"nosshtradamus/internal/sshproxy"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 
 	"flag"
 	"fmt"
@@ -94,12 +95,20 @@ func main() {
 
 	// default to checking host keys
 	strictHostChecking := true
+	hostKeyChecker := sshproxy.AcceptAllHostKeys
 	if specifiedStrictChecking, ok := sshClientOptions["StrictHostKeyChecking"]; ok {
 		strictHostChecking = truthy(specifiedStrictChecking)
 	}
 	if strictHostChecking && userKnownHostsFile == "" {
 		// asked for strict host key checking, but no known hosts file... die
 		panic("Strict host key checking enabled, but no known_hosts provided")
+	}
+	if strictHostChecking {
+		var err error
+		hostKeyChecker, err = knownhosts.New(userKnownHostsFile)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// detect between 3 different modes of identity key files:
@@ -269,7 +278,7 @@ func main() {
 			panic(err)
 		}
 		err = sshproxy.RunProxy(listener, sshproxy.GenHostKey, addr, sshproxy.DefaultAuthMethods,
-			sshproxy.AcceptAllHostKeys, filter)
+			hostKeyChecker, filter)
 		if err != nil {
 			panic(err)
 		}
