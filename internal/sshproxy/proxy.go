@@ -21,11 +21,19 @@ import (
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/ssh"
 
-	"fmt"
 	"io"
 	"net"
 	"time"
 )
+
+type ProxyConfig struct {
+	KeyProvider      HostKeyProvider
+	TargetKeyChecker ssh.HostKeyCallback
+	ChannelFilter    ChannelStreamFilter
+	AuthMethods      []ssh.AuthMethod
+	Banner           func(conn ssh.ConnMetadata) string
+	ReportAuthErr    bool
+}
 
 type HostKeyProvider func() (ssh.Signer, error)
 
@@ -69,8 +77,14 @@ type ChannelRequestSink func(recipient ssh.Channel, sender <-chan *ssh.Request)
 // A ChannelRequestFilter takes one request sink and outputs one that may watch, filter, transform those requests.
 type ChannelRequestFilter func(sink ChannelRequestSink) ChannelRequestSink
 
-func RunProxy(listener net.Listener, keyProvider HostKeyProvider, target net.Addr, auth []ssh.AuthMethod,
-	keyCallback ssh.HostKeyCallback, filter ChannelStreamFilter) error {
+func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) error {
+	keyProvider := configOpts.KeyProvider
+	auth := configOpts.AuthMethods
+	keyCallback := configOpts.TargetKeyChecker
+	filter := configOpts.ChannelFilter
+	reportAuthErr := configOpts.ReportAuthErr
+	banner := configOpts.Banner
+
 	var proxyConn *ssh.Client
 	config := &ssh.ServerConfig{
 		// Note: To make this usable as a generic client-side wrapper for the 'ssh' binary, need to add key and password
@@ -86,6 +100,9 @@ func RunProxy(listener net.Listener, keyProvider HostKeyProvider, target net.Add
 				Auth:            auth,
 			})
 			if err != nil {
+				if reportAuthErr {
+					_, _ = challenge(user, err.Error(), []string{}, []bool{})
+				}
 				return nil, err
 			}
 			proxyConn = clientConn
@@ -94,6 +111,8 @@ func RunProxy(listener net.Listener, keyProvider HostKeyProvider, target net.Add
 			_, _ = challenge(user, "", []string{}, []bool{})
 			return nil, nil
 		},
+		MaxAuthTries:   1,
+		BannerCallback: banner,
 	}
 	hostKey, err := keyProvider()
 	if err != nil {
@@ -120,14 +139,6 @@ func RunProxy(listener net.Listener, keyProvider HostKeyProvider, target net.Add
 			_ = proxyConn.Close()
 		}(proxyConn, sshConn, chans, reqs)
 	}
-}
-
-func DumbTransparentProxy(port int, target net.Addr) error {
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return err
-	}
-	return RunProxy(listener, GenHostKey, target, DefaultAuthMethods, AcceptAllHostKeys, nil)
 }
 
 func handleSshClientChannels(proxyConn *ssh.Client, client *ssh.ServerConn, nc <-chan ssh.NewChannel,

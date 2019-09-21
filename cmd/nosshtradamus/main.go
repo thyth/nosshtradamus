@@ -277,8 +277,16 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		err = sshproxy.RunProxy(listener, sshproxy.GenHostKey, addr, sshproxy.DefaultAuthMethods,
-			hostKeyChecker, filter)
+		err = sshproxy.RunProxy(listener, addr, &sshproxy.ProxyConfig{
+			KeyProvider:      sshproxy.GenHostKey,
+			TargetKeyChecker: hostKeyChecker,
+			ChannelFilter:    filter,
+			AuthMethods:      sshproxy.DefaultAuthMethods,
+			Banner: func(conn ssh.ConnMetadata) string {
+				return fmt.Sprintf("Nosshtradamus proxying ~ %s@%v\n", conn.User(), target)
+			},
+			ReportAuthErr: true,
+		})
 		if err != nil {
 			panic(err)
 		}
