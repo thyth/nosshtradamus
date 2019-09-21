@@ -22,11 +22,13 @@ import (
 	"nosshtradamus/internal/sshproxy"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"strings"
@@ -53,6 +55,30 @@ func truthy(s string) bool {
 	}
 }
 
+type deferredSigner struct {
+	actual    ssh.Signer
+	force     func(*deferredSigner) error
+	internPub ssh.PublicKey
+}
+
+func (ds *deferredSigner) PublicKey() ssh.PublicKey {
+	if ds.internPub != nil {
+		return ds.internPub
+	}
+	if ds.actual == nil {
+		_ = ds.force(ds)
+	}
+	return ds.actual.PublicKey()
+}
+func (ds *deferredSigner) Sign(rand io.Reader, data []byte) (*ssh.Signature, error) {
+	if ds.actual == nil {
+		if err := ds.force(ds); err != nil {
+			return nil, err
+		}
+	}
+	return ds.actual.Sign(rand, data)
+}
+
 func main() {
 	port := 0
 	target := ""
@@ -62,6 +88,7 @@ func main() {
 	var optionArgs arrayFlags
 	var identityArgs arrayFlags
 	agentForward := false
+	disableAgent := false
 	dumbAuth := false
 	authErrDetails := false
 
@@ -74,6 +101,7 @@ func main() {
 	flag.Var(&optionArgs, "o", "Proxy SSH client options (repeatable)")
 	flag.Var(&identityArgs, "i", "Proxy SSH client identity file paths (repeatable)")
 	flag.BoolVar(&agentForward, "A", false, "Allow proxy SSH client to forward agent")
+	flag.BoolVar(&disableAgent, "a", false, "Disable use of SSH agent for key based authentication")
 	flag.BoolVar(&dumbAuth, "dumbauth", false, "Use 'dumb' authentication (send blank password)")
 	flag.BoolVar(&authErrDetails, "authErr", false, "Show details on authentication errors with target")
 	flag.Parse()
@@ -151,8 +179,78 @@ func main() {
 	authMethods := sshproxy.DefaultAuthMethods
 	var extraQuestions chan *sshproxy.ProxiedAuthQuestion
 	if !dumbAuth {
+		var signers []ssh.Signer
+		keySet := map[string]string{}
+		// keys from the agent
+		if !disableAgent {
+			if agentSocket, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
+				if agentConn, err := net.Dial("unix", agentSocket); err == nil {
+					sshAgent := agent.NewClient(agentConn)
+					if agentSigners, err := sshAgent.Signers(); err == nil {
+						for _, agentSigner := range agentSigners {
+							publicKeyIdentity := fmt.Sprintf("%x", agentSigner.PublicKey().Marshal())
+							if _, present := keySet[publicKeyIdentity]; !present {
+								signers = append(signers, agentSigner)
+								keySet[publicKeyIdentity] = publicKeyIdentity
+							}
+						}
+					}
+				}
+			}
+		}
+		// keys from identities -- might be password protected
 		extraQuestions = make(chan *sshproxy.ProxiedAuthQuestion)
+		for _, sshIdentity := range sshIdentities {
+			if keyBytes, err := ioutil.ReadFile(sshIdentity); err == nil {
+				if signer, err := ssh.ParsePrivateKey(keyBytes); err == nil {
+					// unencrypted private key
+					publicKeyIdentity := fmt.Sprintf("%x", signer.PublicKey().Marshal())
+					if _, present := keySet[publicKeyIdentity]; !present {
+						signers = append(signers, signer)
+						keySet[publicKeyIdentity] = publicKeyIdentity
+					}
+				} else if err.Error() == "ssh: cannot decode encrypted private keys" {
+					// XXX: Brittle hack -- no dedicated sentinel error for private key decoding in SSH library.
+					// create a deferred key, and ask for a password when asked to sign with it (via extra questions)
+					if pubKeyBytes, err := ioutil.ReadFile(sshIdentity + ".pub"); err == nil {
+						if pubKey, _, _, _, err := ssh.ParseAuthorizedKey(pubKeyBytes); err == nil {
+							publicKeyIdentity := fmt.Sprintf("%x", pubKey.Marshal())
+							if _, present := keySet[publicKeyIdentity]; !present {
+								signers = append(signers, &deferredSigner{
+									internPub: pubKey,
+									force: func(ds *deferredSigner) error {
+										answer := make(chan error, 1)
+										extraQuestions <- &sshproxy.ProxiedAuthQuestion{
+											Message: fmt.Sprintf("Enter password for '%s'", sshIdentity),
+											Prompt:  "Password: ",
+											Echo:    false,
+											OnAnswer: func(password string) bool {
+												if decryptedSigner, err := ssh.ParsePrivateKeyWithPassphrase(keyBytes,
+													[]byte(password)); err == nil {
+													ds.actual = decryptedSigner
+													close(answer)
+													return true
+												} else {
+													answer <- err
+													return false
+												}
+											},
+										}
+										return <-answer
+									},
+								})
+								keySet[publicKeyIdentity] = publicKeyIdentity
+							}
+						}
+					}
+				}
+			}
+		}
+
 		authMethods = []ssh.AuthMethod{
+			ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+				return signers, nil
+			}),
 			ssh.KeyboardInteractive(func(_, instruction string, questions []string, echos []bool) ([]string, error) {
 				var answers []string
 				answer := make(chan string, 1)
@@ -174,7 +272,7 @@ func main() {
 			ssh.PasswordCallback(func() (string, error) {
 				passwd := make(chan string, 1)
 				extraQuestions <- &sshproxy.ProxiedAuthQuestion{
-					Prompt: "[*] Password",
+					Prompt: "[*] Password: ",
 					Echo:   false,
 					OnAnswer: func(password string) bool {
 						passwd <- password
