@@ -112,33 +112,36 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 					Auth:            auth,
 				})
 				close(established)
-				if configOpts.ExtraQuestions != nil {
-					close(configOpts.ExtraQuestions)
-				}
 			}()
 
 			asked := false
 			if configOpts.ExtraQuestions != nil {
-				// ask any supplemental questions; one at a time
-				for question := range configOpts.ExtraQuestions {
-					asked = true
-					answers, err := challenge(user, question.Message, []string{question.Prompt}, []bool{question.Echo})
-					if err != nil {
-						return nil, err
-					}
-					if len(answers) != 1 {
-						return nil, fmt.Errorf("expected 1 answer, got %d", len(answers))
-					}
-					if !question.OnAnswer(answers[0]) {
-						return nil, fmt.Errorf("wrong answer to %s", question.Message)
-					}
-					if connErr != nil {
-						break
+			loop:
+				// ask any supplemental questions; one at a time, until the target connection is established (or killed)
+				for {
+					select {
+					case question := <-configOpts.ExtraQuestions:
+						asked = true
+						answers, err := challenge(user, question.Message, []string{question.Prompt}, []bool{question.Echo})
+						if err != nil {
+							return nil, err
+						}
+						if len(answers) != 1 {
+							return nil, fmt.Errorf("expected 1 answer, got %d", len(answers))
+						}
+						if !question.OnAnswer(answers[0]) {
+							return nil, fmt.Errorf("wrong answer to %s", question.Message)
+						}
+						if connErr != nil {
+							break loop
+						}
+					case <-established:
+						break loop
 					}
 				}
+			} else {
+				<-established
 			}
-
-			<-established
 			if !asked || (reportAuthErr && connErr != nil) {
 				msg := ""
 				if connErr != nil {
