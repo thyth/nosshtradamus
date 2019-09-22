@@ -309,27 +309,45 @@ func main() {
 			var reqFilter sshproxy.ChannelRequestFilter
 
 			if chanType == "session" {
-				wrapped = sshChannel
-				if fakeDelay > 0 {
-					wrapped = predictive.RingDelay(wrapped, fakeDelay, 512)
-				}
-				if !noPrediction {
-					options := predictive.GetDefaultInterposerOptions()
-					interposer := predictive.Interpose(wrapped, func(interposer *predictive.Interposer, epoch uint64, openedAt time.Time) {
-						if printTiming {
-							fmt.Printf("Ping %d\n", epoch)
-						}
-						if fakeDelay > 0 {
-							time.Sleep(fakeDelay)
-						}
-						_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch), true, nil)
+				ioSwitch := predictive.MakeIoSwitch(sshChannel)
+				wrapped = ioSwitch
 
-						if printTiming {
-							fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
+				if !noPrediction {
+					activated := false
+					var interposer *predictive.Interposer
+					activateInterposer := func() {
+						if activated {
+							return
 						}
-						time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
-						interposer.CloseEpoch(epoch, openedAt)
-					}, options)
+						activated = true
+						var wrapped io.ReadWriteCloser
+						wrapped = sshChannel
+						if fakeDelay > 0 {
+							wrapped = predictive.RingDelay(wrapped, fakeDelay, 512)
+						}
+						options := predictive.GetDefaultInterposerOptions()
+						interposer = predictive.Interpose(wrapped, func(interposer *predictive.Interposer,
+							epoch uint64, openedAt time.Time) {
+							if printTiming {
+								fmt.Printf("Ping %d\n", epoch)
+							}
+							if fakeDelay > 0 {
+								time.Sleep(fakeDelay)
+							}
+							_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch),
+								true, nil)
+
+							if printTiming {
+								fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
+							}
+							time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
+							interposer.CloseEpoch(epoch, openedAt)
+						}, options)
+						wrapped = interposer
+
+						ioSwitch.Enable(wrapped)
+					}
+
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
 						return func(recipient ssh.Channel, sender <-chan *ssh.Request) {
 							// capture and process a subset of requests prior to forwarding them
@@ -342,14 +360,18 @@ func main() {
 								case "pty-req":
 									ptyreq, err := sshproxy.InterpretPtyReq(request.Payload)
 									if err == nil {
+										activateInterposer()
 										interposer.Resize(int(ptyreq.Width), int(ptyreq.Height))
 									}
 								case "window-change":
 									winch, err := sshproxy.InterpretWindowChange(request.Payload)
-									if err == nil {
+									if err == nil && interposer != nil {
 										interposer.Resize(int(winch.Width), int(winch.Height))
 									}
 								case "nosshtradamus/displayPreference":
+									if interposer == nil {
+										continue
+									}
 									preference := strings.ToLower(string(request.Payload))
 									switch preference {
 									case "always":
@@ -375,6 +397,9 @@ func main() {
 									}
 									continue // do not pass through the proxy
 								case "nosshtradamus/predictOverwrite":
+									if interposer == nil {
+										continue
+									}
 									setting := strings.ToLower(string(request.Payload))
 									switch setting {
 									case "true":
@@ -404,12 +429,8 @@ func main() {
 							close(passthrough)
 						}
 					}
-					wrapped = interposer
 				}
 
-				if wrapped == sshChannel {
-					wrapped = nil
-				}
 			}
 
 			return wrapped, reqFilter
