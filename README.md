@@ -91,11 +91,22 @@ by the proxy providing the same response consistency user experience improvement
 
 ### User Authentication
 
-**Note**: Nosshtradamus currently supports connecting to remote servers with blank passwords only. Connections between
-the SSH client and proxy require no authentication. Also, the proxy will generate a new SSH host key upon startup.
+Nosshtradamus supports connecting to remote servers with public key authentication from proxy co-located SSH agents and
+identity files (in PEM format, not the newer key format used by e.g. ed25519 keys), as well as arbitrary
+`keyboard-interactive` challenges (which are forwarded to the connecting client), and plain-password authentication
+(forwarded as a keyboard-interactive challenge to the connecting client). Identity files that are password protected
+are supported, but the connecting client will be asked for the password the first time the key is loaded (via
+keyboard-interactive challenge).
 
-Version 1.0 work includes passing through keyboard-interactive challenges to the user SSH client (for passsword auth)
-and methods of accessing SSH authentication keys (via files and/or agents).
+Since keyboard-interactive challenges likely contain plaintext credentials, Nosshtradamus will default to strict key
+authentication in the same fashion as the OpenSSH client. The same options (`-o UserKnownHostsFile=<path>` and
+`-o StrictHostKeyChecking=<yes/no>`) are supported on the command line to control this behavior.
+
+The proxy will generate a new SSH host key upon startup.
+
+SSH authentication agent forwarding (i.e. `ssh -A user@host`) **does not currently operate correctly**. Similarly, while
+it is possible in principle to directly utilize the connecting client's SSH agent to authenticate with the target
+service, such a configuration is not straightforward in Go Crypto's SSH library.
 
 Scrollback
 ----------
@@ -133,12 +144,26 @@ The simplest way to start the proxy: `nosshtradamus -port proxy-server-port -tar
 
 Supported command line arguments:
 ```
+  -a
+    Disable use of SSH agent for key based authentication
+  -authErr
+    Show details on authentication errors with target
+  -dumbauth
+    Use 'dumb' authentication (send blank password)
   -fakeDelay duration
     Artificial roundtrip latency added to sessions
+  -i identity file path
+    Proxy SSH client identity file paths (repeatable)
+  -noBanner
+    Disable the Nosshtradamus proxy banner
   -nopredict
     Disable the mosh-based predictive backend
+  -o SSH client option
+    Proxy SSH client options (repeatable)
   -port int
     Proxy listen port
+  -printTiming
+    Print epoch synchronization timing messages
   -target string
     Target SSH host
   -version

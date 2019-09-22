@@ -102,8 +102,8 @@ func main() {
 	flag.BoolVar(&printTiming, "printTiming", false, "Print epoch synchronization timing messages")
 	flag.BoolVar(&noBanner, "noBanner", false, "Disable the Nosshtradamus proxy banner")
 
-	flag.Var(&optionArgs, "o", "Proxy SSH client options (repeatable)")
-	flag.Var(&identityArgs, "i", "Proxy SSH client identity file paths (repeatable)")
+	flag.Var(&optionArgs, "o", "Proxy `SSH client option`s (repeatable)")
+	flag.Var(&identityArgs, "i", "Proxy SSH client `identity file path`s (repeatable)")
 	flag.BoolVar(&agentForward, "A", false, "Allow proxy SSH client to forward agent")
 	flag.BoolVar(&disableAgent, "a", false, "Disable use of SSH agent for key based authentication")
 	flag.BoolVar(&dumbAuth, "dumbauth", false, "Use 'dumb' authentication (send blank password)")
