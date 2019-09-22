@@ -27,6 +27,23 @@ import (
 	"time"
 )
 
+type ProxyConfig struct {
+	KeyProvider      HostKeyProvider
+	TargetKeyChecker ssh.HostKeyCallback
+	ChannelFilter    ChannelStreamFilter
+	AuthMethods      []ssh.AuthMethod
+	Banner           func(conn ssh.ConnMetadata) string
+	ReportAuthErr    bool
+	ExtraQuestions   chan *ProxiedAuthQuestion
+}
+
+type ProxiedAuthQuestion struct {
+	Message  string
+	Prompt   string
+	Echo     bool
+	OnAnswer func(string) bool
+}
+
 type HostKeyProvider func() (ssh.Signer, error)
 
 // create a new SSH host key
@@ -69,8 +86,14 @@ type ChannelRequestSink func(recipient ssh.Channel, sender <-chan *ssh.Request)
 // A ChannelRequestFilter takes one request sink and outputs one that may watch, filter, transform those requests.
 type ChannelRequestFilter func(sink ChannelRequestSink) ChannelRequestSink
 
-func RunProxy(listener net.Listener, keyProvider HostKeyProvider, target net.Addr, auth []ssh.AuthMethod,
-	keyCallback ssh.HostKeyCallback, filter ChannelStreamFilter) error {
+func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) error {
+	keyProvider := configOpts.KeyProvider
+	auth := configOpts.AuthMethods
+	keyCallback := configOpts.TargetKeyChecker
+	filter := configOpts.ChannelFilter
+	reportAuthErr := configOpts.ReportAuthErr
+	banner := configOpts.Banner
+
 	var proxyConn *ssh.Client
 	config := &ssh.ServerConfig{
 		// Note: To make this usable as a generic client-side wrapper for the 'ssh' binary, need to add key and password
@@ -78,22 +101,59 @@ func RunProxy(listener net.Listener, keyProvider HostKeyProvider, target net.Add
 		KeyboardInteractiveCallback: func(conn ssh.ConnMetadata,
 			challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
 			user := conn.User()
-			// connecting to the remote host only when the proxy has enough information to make the connection
-			clientConn, err := ssh.Dial("tcp", target.String(), &ssh.ClientConfig{
-				User:            user,
-				Timeout:         defaultTimeout,
-				HostKeyCallback: keyCallback,
-				Auth:            auth,
-			})
-			if err != nil {
-				return nil, err
-			}
-			proxyConn = clientConn
+			var connErr error
+			established := make(chan interface{})
+			go func() {
+				// connecting to the remote host only when the proxy has enough information to make the connection
+				proxyConn, connErr = ssh.Dial("tcp", target.String(), &ssh.ClientConfig{
+					User:            user,
+					Timeout:         defaultTimeout,
+					HostKeyCallback: keyCallback,
+					Auth:            auth,
+				})
+				close(established)
+			}()
 
-			// send blank challenge so that the user is not prompted to authenticate
-			_, _ = challenge(user, "", []string{}, []bool{})
-			return nil, nil
+			asked := false
+			if configOpts.ExtraQuestions != nil {
+			loop:
+				// ask any supplemental questions; one at a time, until the target connection is established (or killed)
+				for {
+					select {
+					case question := <-configOpts.ExtraQuestions:
+						asked = true
+						answers, err := challenge(user, question.Message, []string{question.Prompt}, []bool{question.Echo})
+						if err != nil {
+							return nil, err
+						}
+						if len(answers) != 1 {
+							return nil, fmt.Errorf("expected 1 answer, got %d", len(answers))
+						}
+						if !question.OnAnswer(answers[0]) {
+							return nil, fmt.Errorf("wrong answer to %s", question.Message)
+						}
+						if connErr != nil {
+							break loop
+						}
+					case <-established:
+						break loop
+					}
+				}
+			} else {
+				<-established
+			}
+			if !asked || (reportAuthErr && connErr != nil) {
+				msg := ""
+				if connErr != nil {
+					msg = connErr.Error()
+				}
+				_, _ = challenge(user, msg, []string{}, []bool{})
+			}
+
+			return nil, connErr
 		},
+		MaxAuthTries:   1,
+		BannerCallback: banner,
 	}
 	hostKey, err := keyProvider()
 	if err != nil {
@@ -120,14 +180,6 @@ func RunProxy(listener net.Listener, keyProvider HostKeyProvider, target net.Add
 			_ = proxyConn.Close()
 		}(proxyConn, sshConn, chans, reqs)
 	}
-}
-
-func DumbTransparentProxy(port int, target net.Addr) error {
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return err
-	}
-	return RunProxy(listener, GenHostKey, target, DefaultAuthMethods, AcceptAllHostKeys, nil)
 }
 
 func handleSshClientChannels(proxyConn *ssh.Client, client *ssh.ServerConn, nc <-chan ssh.NewChannel,
