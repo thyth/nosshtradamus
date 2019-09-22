@@ -92,6 +92,7 @@ func main() {
 	dumbAuth := false
 	authErrDetails := false
 	printTiming := false
+	noBanner := false
 
 	flag.IntVar(&port, "port", 0, "Proxy listen port")
 	flag.StringVar(&target, "target", "", "Target SSH host")
@@ -99,6 +100,7 @@ func main() {
 	flag.BoolVar(&noPrediction, "nopredict", false, "Disable the mosh-based predictive backend")
 	flag.DurationVar(&fakeDelay, "fakeDelay", 0, "Artificial roundtrip latency added to sessions")
 	flag.BoolVar(&printTiming, "printTiming", false, "Print epoch synchronization timing messages")
+	flag.BoolVar(&noBanner, "noBanner", false, "Disable the Nosshtradamus proxy banner")
 
 	flag.Var(&optionArgs, "o", "Proxy SSH client options (repeatable)")
 	flag.Var(&identityArgs, "i", "Proxy SSH client identity file paths (repeatable)")
@@ -444,16 +446,20 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		banner := func(conn ssh.ConnMetadata) string {
+			return fmt.Sprintf("Nosshtradamus proxying ~ %s@%v\n", conn.User(), target)
+		}
+		if noBanner {
+			banner = nil
+		}
 		err = sshproxy.RunProxy(listener, addr, &sshproxy.ProxyConfig{
 			KeyProvider:      sshproxy.GenHostKey,
 			TargetKeyChecker: hostKeyChecker,
 			ChannelFilter:    filter,
 			AuthMethods:      authMethods,
-			Banner: func(conn ssh.ConnMetadata) string {
-				return fmt.Sprintf("Nosshtradamus proxying ~ %s@%v\n", conn.User(), target)
-			},
-			ReportAuthErr:  authErrDetails,
-			ExtraQuestions: extraQuestions,
+			Banner:           banner,
+			ReportAuthErr:    authErrDetails,
+			ExtraQuestions:   extraQuestions,
 		})
 		if err != nil {
 			panic(err)
