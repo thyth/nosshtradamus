@@ -35,6 +35,7 @@ type ProxyConfig struct {
 	Banner           func(conn ssh.ConnMetadata) string
 	ReportAuthErr    bool
 	ExtraQuestions   chan *ProxiedAuthQuestion
+	BlockAgent       bool
 }
 
 type ProxiedAuthQuestion struct {
@@ -96,8 +97,6 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 
 	var proxyConn *ssh.Client
 	config := &ssh.ServerConfig{
-		// Note: To make this usable as a generic client-side wrapper for the 'ssh' binary, need to add key and password
-		//       authentication mechanisms, local agent forwarding, et cetra.
 		KeyboardInteractiveCallback: func(conn ssh.ConnMetadata,
 			challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
 			user := conn.User()
@@ -175,6 +174,20 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 			// reflect connection level requests from the client; can the server initiate such requests, or just reply?
 			go reflectGlobalRequests(proxyConn, reqs)
 
+			// capture target server initiated channels; due to limitations of Go Crypto's SSH client, this is concrete,
+			// specifying a closed set of supported channels. specifically supporting SSH agent forwarding. alterations
+			// to the upstream library are possible if full proxying symmetry is desired (add wildcard handler callback)
+			go func() {
+				nc := proxyConn.HandleChannelOpen("auth-agent@openssh.com")
+				for channelRequest := range nc {
+					if configOpts.BlockAgent {
+						_ = channelRequest.Reject(ssh.Prohibited, "agent forwarding prohibited")
+						continue
+					}
+					go handleSshChannel(sshConn, proxyConn, channelRequest, nil)
+				}
+			}()
+
 			handleSshClientChannels(proxyConn, sshConn, chans, filter)
 
 			_ = proxyConn.Close()
@@ -185,15 +198,15 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 func handleSshClientChannels(proxyConn *ssh.Client, client *ssh.ServerConn, nc <-chan ssh.NewChannel,
 	filter ChannelStreamFilter) {
 	for channelRequest := range nc {
-		go handleSshClientChannel(proxyConn, client, channelRequest, filter)
+		go handleSshChannel(proxyConn, client, channelRequest, filter)
 	}
 }
 
-func handleSshClientChannel(proxyConn *ssh.Client, _ *ssh.ServerConn, request ssh.NewChannel,
+func handleSshChannel(clientSide ssh.Conn, _ ssh.Conn, request ssh.NewChannel,
 	filter ChannelStreamFilter) {
 
 	chanType := request.ChannelType()
-	proxyChan, proxyReqs, err := proxyConn.OpenChannel(chanType, request.ExtraData())
+	proxyChan, proxyReqs, err := clientSide.OpenChannel(chanType, request.ExtraData())
 	if err != nil {
 		if openChanErr, ok := err.(*ssh.OpenChannelError); ok {
 			_ = request.Reject(openChanErr.Reason, openChanErr.Message)

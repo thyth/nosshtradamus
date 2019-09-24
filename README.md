@@ -104,8 +104,7 @@ authentication in the same fashion as the OpenSSH client. The same options (`-o 
 
 The proxy will generate a new SSH host key upon startup.
 
-SSH authentication agent forwarding (i.e. `ssh -A user@host`) **does not currently operate correctly**. Similarly, while
-it is possible in principle to directly utilize the connecting client's SSH agent to authenticate with the target
+While it is possible in principle to directly utilize the connecting client's SSH agent to authenticate with the target
 service, such a configuration is not straightforward in Go Crypto's SSH library.
 
 Scrollback
@@ -144,6 +143,8 @@ The simplest way to start the proxy: `nosshtradamus -port proxy-server-port -tar
 
 Supported command line arguments:
 ```
+  -A
+    Allow proxy SSH client to forward agent
   -a
     Disable use of SSH agent for key based authentication
   -authErr

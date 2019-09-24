@@ -357,8 +357,6 @@ func main() {
 							go sink(recipient, passthrough)
 							for request := range sender {
 								switch request.Type {
-								case "shell":
-									// do we need to enforce that pty-req has been requested before shell?
 								case "pty-req":
 									ptyreq, err := sshproxy.InterpretPtyReq(request.Payload)
 									if err == nil {
@@ -460,6 +458,7 @@ func main() {
 			Banner:           banner,
 			ReportAuthErr:    authErrDetails,
 			ExtraQuestions:   extraQuestions,
+			BlockAgent:       !agentForward,
 		})
 		if err != nil {
 			panic(err)
