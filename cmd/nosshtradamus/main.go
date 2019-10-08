@@ -314,7 +314,7 @@ func main() {
 				ioSwitch := predictive.MakeIoSwitch(sshChannel)
 				wrapped = ioSwitch
 
-				if !noPrediction {
+				if !noPrediction || fakeDelay > 0 {
 					activated := false
 					var interposer *predictive.Interposer
 					activateInterposer := func() {
@@ -327,25 +327,27 @@ func main() {
 						if fakeDelay > 0 {
 							wrapped = predictive.RingDelay(wrapped, fakeDelay, 512)
 						}
-						options := predictive.GetDefaultInterposerOptions()
-						interposer = predictive.Interpose(wrapped, func(interposer *predictive.Interposer,
-							epoch uint64, openedAt time.Time) {
-							if printTiming {
-								fmt.Printf("Ping %d\n", epoch)
-							}
-							if fakeDelay > 0 {
-								time.Sleep(fakeDelay)
-							}
-							_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch),
-								true, nil)
+						if !noPrediction {
+							options := predictive.GetDefaultInterposerOptions()
+							interposer = predictive.Interpose(wrapped, func(interposer *predictive.Interposer,
+								epoch uint64, openedAt time.Time) {
+								if printTiming {
+									fmt.Printf("Ping %d\n", epoch)
+								}
+								if fakeDelay > 0 {
+									time.Sleep(fakeDelay)
+								}
+								_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch),
+									true, nil)
 
-							if printTiming {
-								fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
-							}
-							time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
-							interposer.CloseEpoch(epoch, openedAt)
-						}, options)
-						wrapped = interposer
+								if printTiming {
+									fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
+								}
+								time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
+								interposer.CloseEpoch(epoch, openedAt)
+							}, options)
+							wrapped = interposer
+						}
 
 						ioSwitch.Enable(wrapped)
 					}
@@ -361,7 +363,9 @@ func main() {
 									ptyreq, err := sshproxy.InterpretPtyReq(request.Payload)
 									if err == nil {
 										activateInterposer()
-										interposer.Resize(int(ptyreq.Width), int(ptyreq.Height))
+										if interposer != nil {
+											interposer.Resize(int(ptyreq.Width), int(ptyreq.Height))
+										}
 									}
 								case "window-change":
 									winch, err := sshproxy.InterpretWindowChange(request.Payload)
