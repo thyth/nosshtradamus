@@ -16,7 +16,7 @@ before_script:
   # certs and git to pull another repo from gitlab.hive.thyth.com; swig and golang to build go-mosh (and nosshtradamus)
   - apt-get install -y -qq ca-certificates git swig golang-1.15
   # packages required to build mosh
-  - apt-get install -y -qq autoconf pkg-config libncurses-dev protobuf-compiler libprotobuf-dev zlib1g-dev libssl-dev
+  - apt-get install -y -qq autoconf make pkg-config libncurses-dev protobuf-compiler libprotobuf-dev zlib1g-dev libssl-dev
   # use clang instead of g++/gcc to build mosh and the cgo dependency in nosshtradamus; set system compiler to clang
   - apt-get install -y -qq clang
   - update-alternatives --set c++ /usr/bin/clang++
