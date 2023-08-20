@@ -1,6 +1,6 @@
 /*
  * nosshtradamus: predictive terminal emulation for SSH
- * Copyright 2019 Daniel Selifonov
+ * Copyright 2019-2023 Daniel Selifonov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 package predictive
 
 import (
@@ -62,6 +63,7 @@ func GetVersion() string {
 // been acknowledged and reflected in the data read from upstream, designating which epoch is completed and pass through
 // the timestamp it was provided as an argument. This data cannot be carried in-band in the terminal octet stream, but
 // should be sent in a parallel channel that shares the same latency/throughput characteristics as the octet stream.
+
 type Interposer struct {
 	upstream        io.ReadWriteCloser
 	upstreamAsynk   io.WriteCloser
@@ -100,9 +102,9 @@ type DisplayPreference overlay.DisplayPreference
 
 // bridge to the Mosh overlay parameters
 const (
-	PredictAlways = DisplayPreference(overlay.PredictAlways)
-	PredictNever = DisplayPreference(overlay.PredictNever)
-	PredictAdaptive = DisplayPreference(overlay.PredictAdaptive)
+	PredictAlways       = DisplayPreference(overlay.PredictAlways)
+	PredictNever        = DisplayPreference(overlay.PredictNever)
+	PredictAdaptive     = DisplayPreference(overlay.PredictAdaptive)
 	PredictExperimental = DisplayPreference(overlay.PredictExperimental)
 )
 
@@ -541,16 +543,18 @@ func (i *Interposer) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// Change the width and height of the interposed terminal, in response to e.g. SIGWINCH or equivalent signal.
+// Resize the width and height of the interposed terminal, in response to e.g. SIGWINCH or equivalent signal.
 func (i *Interposer) Resize(w, h int) {
 	i.emulatorMutex.Lock()
 	defer i.emulatorMutex.Unlock()
 	i.emulator.Act(parser.MakeResize(int64(w), int64(h)))
 	i.predictor.Reset()
+	// need to update i.width, i.height, or is it reflected back when acting on the emulator?
 }
 
-// Produce a "patch" that transforms a fresh/reset terminal to one that matches the current display contents of the
-// interposed terminal. By default, this will show predictions in flight, but this can be disabled by the parameter.
+// CurrentContents produces a "patch" that transforms a fresh/reset terminal to one that matches the current display
+// contents of the interposed terminal. By default, this will show predictions in flight, but this can be disabled by
+// the parameter.
 func (i *Interposer) CurrentContents(noPrediction bool) string {
 	i.emulatorMutex.Lock()
 	width, height := i.width, i.height
