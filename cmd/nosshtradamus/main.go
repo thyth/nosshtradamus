@@ -1,6 +1,6 @@
 /*
  * nosshtradamus: predictive terminal emulation for SSH
- * Copyright 2019 Daniel Selifonov
+ * Copyright 2019-2023 Daniel Selifonov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 package main
 
 import (
@@ -28,7 +29,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"strings"
@@ -131,7 +131,7 @@ func main() {
 
 	// default to checking host keys
 	strictHostChecking := true
-	hostKeyChecker := sshproxy.AcceptAllHostKeys
+	hostKeyChecker := ssh.InsecureIgnoreHostKey()
 	if specifiedStrictChecking, ok := sshClientOptions["StrictHostKeyChecking"]; ok {
 		strictHostChecking = truthy(specifiedStrictChecking)
 	}
@@ -205,7 +205,7 @@ func main() {
 		// keys from identities -- might be password protected
 		extraQuestions = make(chan *sshproxy.ProxiedAuthQuestion)
 		for _, sshIdentity := range sshIdentities {
-			if keyBytes, err := ioutil.ReadFile(sshIdentity); err == nil {
+			if keyBytes, err := os.ReadFile(sshIdentity); err == nil {
 				if signer, err := ssh.ParsePrivateKey(keyBytes); err == nil {
 					// unencrypted private key
 					publicKeyIdentity := fmt.Sprintf("%x", signer.PublicKey().Marshal())
@@ -216,7 +216,7 @@ func main() {
 				} else if err.Error() == "ssh: cannot decode encrypted private keys" {
 					// XXX: Brittle hack -- no dedicated sentinel error for private key decoding in SSH library.
 					// create a deferred key, and ask for a password when asked to sign with it (via extra questions)
-					if pubKeyBytes, err := ioutil.ReadFile(sshIdentity + ".pub"); err == nil {
+					if pubKeyBytes, err := os.ReadFile(sshIdentity + ".pub"); err == nil {
 						if pubKey, _, _, _, err := ssh.ParseAuthorizedKey(pubKeyBytes); err == nil {
 							publicKeyIdentity := fmt.Sprintf("%x", pubKey.Marshal())
 							if _, present := keySet[publicKeyIdentity]; !present {

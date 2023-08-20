@@ -71,9 +71,9 @@ It operates as an SSH protocol proxy running on the "near" side of the network o
 localhost, with a target server specified on the command line. The SSH client is connected to the proxy, and the proxy
 itself establishes the connection to the remote host.
 
-SSH channels identified as interactive sessions (by name `session`) are interposed through the predictive terminal
-emulator (using Mosh components). All other SSH channels are passed through unmodified (including file transfer, network
-tunneling, X11 forwarding, agent forwarding, etc.).
+SSH channels identified as interactive sessions ('session' channel types requesting a PTY) are interposed through the
+predictive terminal  emulator (using Mosh components). All other SSH channels are passed through unmodified (including
+file transfer, network tunneling, X11 forwarding, agent forwarding, etc.).
 
 Since there is no component running on the remote server comparable to the `mosh-server`, writes to the remote terminal
 through the predictive interposition are immediately followed by a side-band "ping" request. The ping requests are
