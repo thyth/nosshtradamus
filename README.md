@@ -131,10 +131,8 @@ Due to Go module restrictions, the git submodule reference to the upstream Mosh 
 the dependency. Further, even if the submodule was pulled, it is not possible to initiate a build of Mosh automatically
 in the correct module context (cannot execute arbitrary scripts or `make` for security/safety reasons).
 
-Prior to building Nosshtradamus, check out the Mosh upstream within the Go module directory of 'go-mosh':
-`~/go/pkg/mod/gitlab.hive.thyth.com/chronostruct/go-mosh@<version>`, then follow instructions from Mosh upstream to
-build the Mosh binaries and object files for your system. After completing the Mosh build in the 'go-mosh' module you
-should be able to build Nosshtradamus with an ordinary `go build` invocation.
+Ensure you have the required build-time dependencies for `go-mosh`, then use the `prepare-go-mosh.sh` script to properly
+prepare the module prior to building Nosshtradamus with otherwise ordinary `go build` invocations.
 
 Usage
 -----
