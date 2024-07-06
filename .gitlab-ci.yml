@@ -30,7 +30,8 @@ build:
     - CC="clang" CXX="clang++" PATH="/usr/lib/go-1.18/bin:$PATH" ./prepare-go-mosh.sh
     # Once go-mosh is properly prepared, we can do a mostly ordinary go build invocation.
     # Note: go toolchain environment seems to ignore the system cc/c++ and directly uses gcc/g++.
-    - CC="clang" CXX="clang++" PATH="/usr/lib/go-1.18/bin:$PATH" go build ./cmd/nosshtradamus
+    # Using the 'netgo' build tag to reduce dynamic linking requirement on specific glibc.
+    - CC="clang" CXX="clang++" PATH="/usr/lib/go-1.18/bin:$PATH" go build -tags netgo ./cmd/nosshtradamus
   artifacts:
     paths:
       - nosshtradamus
