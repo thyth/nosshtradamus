@@ -1,6 +1,6 @@
 module nosshtradamus
 
-go 1.18
+go 1.20
 
 require (
 	gitlab.hive.thyth.com/chronostruct/go-mosh v0.2.1
