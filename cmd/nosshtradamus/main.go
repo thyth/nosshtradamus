@@ -203,6 +203,20 @@ func main() {
 			}
 		}
 		// keys from identities -- might be password protected
+		isEncryptedPrivateKeyErr := func(err error) bool {
+			// eventually a sentinel error type was added to x/crypto/ssh -- check for it
+			//goland:noinspection GoTypeAssertionOnErrors
+			if _, correctType := err.(*ssh.PassphraseMissingError); correctType {
+				return true
+			}
+			errStr := err.Error()
+			// for backward compatibility (brittle hack for when there was no sentinel error type)
+			if errStr == "ssh: cannot decode encrypted private keys" ||
+				errStr == "ssh: this private key is passphrase protected" {
+				return true
+			}
+			return false
+		}
 		extraQuestions = make(chan *sshproxy.ProxiedAuthQuestion)
 		for _, sshIdentity := range sshIdentities {
 			if keyBytes, err := os.ReadFile(sshIdentity); err == nil {
@@ -213,8 +227,7 @@ func main() {
 						signers = append(signers, signer)
 						keySet[publicKeyIdentity] = publicKeyIdentity
 					}
-				} else if err.Error() == "ssh: cannot decode encrypted private keys" {
-					// XXX: Brittle hack -- no dedicated sentinel error for private key decoding in SSH library.
+				} else if isEncryptedPrivateKeyErr(err) {
 					// create a deferred key, and ask for a password when asked to sign with it (via extra questions)
 					if pubKeyBytes, err := os.ReadFile(sshIdentity + ".pub"); err == nil {
 						if pubKey, _, _, _, err := ssh.ParseAuthorizedKey(pubKeyBytes); err == nil {

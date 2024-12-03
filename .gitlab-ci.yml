@@ -23,15 +23,18 @@ before_script:
 build:
   stage: build
   script:
+    - export PATH=/usr/lib/go-1.18/bin/:$PATH
+    # Note: go toolchain environment seems to ignore the system cc/c++ and directly uses gcc/g++. Exports CC/CXX to fix.
+    - export CC=clang
+    - export CXX=clang++
     # Delegate preparation of go-mosh, since the Go build process restricts what fetched modules can do when being built
     # by a downstream module (i.e. cannot automatically pull down a git submodule or invoke arbitrary scripting
-    # commands. Since go-mosh is a SWIG wrapper around mosh (a C++ codebase), we need to bypass the normal Go build
+    # commands). Since go-mosh is a SWIG wrapper around mosh (a C++ codebase), we need to bypass the normal Go build
     # fetching process and prepare this dependency directly.
-    - CC="clang" CXX="clang++" PATH="/usr/lib/go-1.18/bin:$PATH" ./prepare-go-mosh.sh
+    - ./prepare-go-mosh.sh
     # Once go-mosh is properly prepared, we can do a mostly ordinary go build invocation.
-    # Note: go toolchain environment seems to ignore the system cc/c++ and directly uses gcc/g++.
     # Using the 'netgo' build tag to reduce dynamic linking requirement on specific glibc.
-    - CC="clang" CXX="clang++" PATH="/usr/lib/go-1.18/bin:$PATH" go build -tags netgo ./cmd/nosshtradamus
+    - go build -tags netgo ./cmd/nosshtradamus
   artifacts:
     paths:
       - nosshtradamus
