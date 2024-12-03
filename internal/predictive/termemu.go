@@ -1,6 +1,6 @@
 /*
  * nosshtradamus: predictive terminal emulation for SSH
- * Copyright 2019-2023 Daniel Selifonov
+ * Copyright 2019-2024 Daniel Selifonov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -66,7 +66,7 @@ func GetVersion() string {
 
 type Interposer struct {
 	upstream        io.ReadWriteCloser
-	upstreamAsynk   io.WriteCloser
+	upstreamAsynk   *Asynk
 	upstreamErr     chan error
 	lastUpstreamErr error
 	droppedUpdate   bool
@@ -538,8 +538,10 @@ func (i *Interposer) Write(p []byte) (int, error) {
 	i.predictor.LocalFrameSent(openedEpoch)
 	i.emulatorMutex.Unlock()
 
-	n, err := i.upstreamAsynk.Write(terminalToHost.Bytes())
-	go i.openEpoch(i, openedEpoch, now)
+	// only open the epoch after the payload has been fully transmitted to the host
+	n, err := i.upstreamAsynk.WriteNotify(terminalToHost.Bytes(), func() {
+		go i.openEpoch(i, openedEpoch, now)
+	})
 	return n, err
 }
 
