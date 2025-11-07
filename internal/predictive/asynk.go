@@ -1,6 +1,6 @@
 /*
  * nosshtradamus: predictive terminal emulation for SSH
- * Copyright 2019-2024 Daniel Selifonov
+ * Copyright 2019-2025 Daniel Selifonov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -65,9 +65,6 @@ func MakeAsynk(upstream io.Writer, capacity int) *Asynk {
 		writeNotify: make(chan any, 1), // buffer up to one notification, for notifying during a write
 	}
 	go func() {
-		defer func() {
-			_ = asw.Close()
-		}()
 		lastTransmittedIndex := 0
 		totalWrittenBytes := uint64(0)
 		for range asw.writeNotify {

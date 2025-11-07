@@ -1,6 +1,6 @@
 /*
  * nosshtradamus: predictive terminal emulation for SSH
- * Copyright 2019-2023 Daniel Selifonov
+ * Copyright 2019-2025 Daniel Selifonov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -102,7 +102,7 @@ func main() {
 	flag.BoolVar(&printTiming, "printTiming", false, "Print epoch synchronization timing messages")
 	flag.BoolVar(&noBanner, "noBanner", false, "Disable the Nosshtradamus proxy banner")
 
-	flag.Var(&optionArgs, "o", "Proxy `SSH client option`s (repeatable)")
+	flag.Var(&optionArgs, "o", "Proxy `SSH client option`s (repeatable) [StrictHostKeyChecking, UserKnownHostsFile]")
 	flag.Var(&identityArgs, "i", "Proxy SSH client `identity file path`s (repeatable)")
 	flag.BoolVar(&agentForward, "A", false, "Allow proxy SSH client to forward agent")
 	flag.BoolVar(&disableAgent, "a", false, "Disable use of SSH agent for key based authentication")
@@ -127,24 +127,6 @@ func main() {
 	// unless overridden by the client
 	if specifiedKnownHost, ok := sshClientOptions["UserKnownHostsFile"]; ok {
 		userKnownHostsFile = specifiedKnownHost
-	}
-
-	// default to checking host keys
-	strictHostChecking := true
-	hostKeyChecker := ssh.InsecureIgnoreHostKey()
-	if specifiedStrictChecking, ok := sshClientOptions["StrictHostKeyChecking"]; ok {
-		strictHostChecking = truthy(specifiedStrictChecking)
-	}
-	if strictHostChecking && userKnownHostsFile == "" {
-		// asked for strict host key checking, but no known hosts file... die
-		panic("Strict host key checking enabled, but no known_hosts provided")
-	}
-	if strictHostChecking {
-		var err error
-		hostKeyChecker, err = knownhosts.New(userKnownHostsFile)
-		if err != nil {
-			panic(err)
-		}
 	}
 
 	// detect between 3 different modes of identity key files:
@@ -312,6 +294,24 @@ func main() {
 		}
 	}
 
+	// default to checking host keys
+	strictHostChecking := true
+	hostKeyChecker := ssh.InsecureIgnoreHostKey()
+	if specifiedStrictChecking, ok := sshClientOptions["StrictHostKeyChecking"]; ok {
+		strictHostChecking = truthy(specifiedStrictChecking)
+	}
+	if strictHostChecking && userKnownHostsFile == "" {
+		// asked for strict host key checking, but no known hosts file... die
+		panic("Strict host key checking enabled, but no known_hosts provided")
+	}
+	if strictHostChecking {
+		var err error
+		hostKeyChecker, err = knownhosts.New(userKnownHostsFile)
+		if err != nil {
+			panic(fmt.Errorf("known hosts checker failed: %w", err))
+		}
+	}
+
 	if port == 0 || target == "" {
 		flag.Usage()
 		return
@@ -417,26 +417,15 @@ func main() {
 									if interposer == nil {
 										continue
 									}
-									setting := strings.ToLower(string(request.Payload))
-									switch setting {
-									case "true":
-										fallthrough
-									case "1":
+									if truthy(string(request.Payload)) {
 										interposer.ChangeOverwritePrediction(true)
 										if request.WantReply {
 											_ = request.Reply(true, nil)
 										}
-									case "false":
-										fallthrough
-									case "0":
+									} else {
 										interposer.ChangeOverwritePrediction(false)
 										if request.WantReply {
 											_ = request.Reply(true, nil)
-										}
-									default:
-										// invalid setting
-										if request.WantReply {
-											_ = request.Reply(false, nil)
 										}
 									}
 									continue // do not pass through the proxy
