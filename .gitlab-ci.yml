@@ -13,8 +13,14 @@ stages:
 
 before_script:
   - apt-get update -qq
+  # get golang backports so newer versions of the language are installable than what ship with Ubuntu upstream
+  - apt-get install -y software-properties-common
+  - add-apt-repository ppa:longsleep/golang-backports
+  - apt-get update -qq
   # certs and git to pull another repo from gitlab.hive.thyth.com; swig and golang to build go-mosh (and nosshtradamus)
-  - apt-get install -y -qq ca-certificates git swig golang-1.20
+  - apt-get install -y -qq ca-certificates git swig golang-1.25
+  # adjust the path to include the go binaries for the explicitly installed version
+  - export PATH=/usr/lib/go-1.25/bin/:$PATH
   # packages required to build mosh
   - apt-get install -y -qq autoconf make pkg-config libncurses-dev protobuf-compiler libprotobuf-dev zlib1g-dev libssl-dev
   # use clang instead of g++/gcc to build mosh/go-mosh and the cgo dependency in nosshtradamus
@@ -23,7 +29,6 @@ before_script:
 build:
   stage: build
   script:
-    - export PATH=/usr/lib/go-1.20/bin/:$PATH
     # Note: go toolchain environment seems to ignore the system cc/c++ and directly uses gcc/g++. Exports CC/CXX to fix.
     - export CC=clang
     - export CXX=clang++
