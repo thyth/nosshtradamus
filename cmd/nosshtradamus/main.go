@@ -84,6 +84,7 @@ func main() {
 	target := ""
 	printPredictiveVersion := false
 	noPrediction := false
+	noCodesetFilter := false
 	var fakeDelay time.Duration
 	var optionArgs arrayFlags
 	var identityArgs arrayFlags
@@ -98,6 +99,7 @@ func main() {
 	flag.StringVar(&target, "target", "", "Target SSH host")
 	flag.BoolVar(&printPredictiveVersion, "version", false, "Display predictive backend version")
 	flag.BoolVar(&noPrediction, "nopredict", false, "Disable the mosh-based predictive backend")
+	flag.BoolVar(&noCodesetFilter, "noCodesetFilter", false, "Default disable the stdout codeset filter")
 	flag.DurationVar(&fakeDelay, "fakeDelay", 0, "Artificial roundtrip latency added to sessions")
 	flag.BoolVar(&printTiming, "printTiming", false, "Print epoch synchronization timing messages")
 	flag.BoolVar(&noBanner, "noBanner", false, "Disable the Nosshtradamus proxy banner")
@@ -324,6 +326,7 @@ func main() {
 			var reqFilter sshproxy.ChannelRequestFilter
 
 			if chanType == "session" {
+				channelNoCodeset := noCodesetFilter
 				ioSwitch := predictive.MakeIoSwitch(sshChannel)
 				wrapped = ioSwitch
 
@@ -335,14 +338,17 @@ func main() {
 							return
 						}
 						activated = true
-						var wrapped io.ReadWriteCloser
-						wrapped = sshChannel
+						var rwc io.ReadWriteCloser
+						rwc = sshChannel
 						if fakeDelay > 0 {
-							wrapped = predictive.RingDelay(wrapped, fakeDelay, 512)
+							rwc = predictive.RingDelay(rwc, fakeDelay, 512)
 						}
 						if !noPrediction {
+							if !channelNoCodeset {
+								rwc = predictive.MakeStdoutFilter(rwc)
+							}
 							options := predictive.GetDefaultInterposerOptions()
-							interposer = predictive.Interpose(wrapped, func(interposer *predictive.Interposer,
+							interposer = predictive.Interpose(rwc, func(interposer *predictive.Interposer,
 								epoch uint64, openedAt time.Time) {
 								if printTiming {
 									fmt.Printf("Ping %d\n", epoch)
@@ -359,10 +365,10 @@ func main() {
 								time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
 								interposer.CloseEpoch(epoch, openedAt)
 							}, options)
-							wrapped = interposer
+							rwc = interposer
 						}
 
-						ioSwitch.Enable(wrapped)
+						ioSwitch.Enable(rwc)
 					}
 
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
@@ -429,6 +435,12 @@ func main() {
 										}
 									}
 									continue // do not pass through the proxy
+								case "nosshtradamus/disableCodesetFilter":
+									channelNoCodeset = truthy(string(request.Payload))
+									if request.WantReply {
+										_ = request.Reply(true, nil)
+									}
+									continue // do not pass through the proxy
 								}
 								passthrough <- request
 							}
@@ -436,7 +448,6 @@ func main() {
 						}
 					}
 				}
-
 			}
 
 			return wrapped, reqFilter
