@@ -85,6 +85,7 @@ func main() {
 	printPredictiveVersion := false
 	noPrediction := false
 	noCodesetFilter := false
+	enableRawTee := false
 	var fakeDelay time.Duration
 	var optionArgs arrayFlags
 	var identityArgs arrayFlags
@@ -100,6 +101,7 @@ func main() {
 	flag.BoolVar(&printPredictiveVersion, "version", false, "Display predictive backend version")
 	flag.BoolVar(&noPrediction, "nopredict", false, "Disable the mosh-based predictive backend")
 	flag.BoolVar(&noCodesetFilter, "noCodesetFilter", false, "Default disable the stdout codeset filter")
+	flag.BoolVar(&enableRawTee, "enableRawTee", false, "Tee unprocessed messages via SSH channel requests")
 	flag.DurationVar(&fakeDelay, "fakeDelay", 0, "Artificial roundtrip latency added to sessions")
 	flag.BoolVar(&printTiming, "printTiming", false, "Print epoch synchronization timing messages")
 	flag.BoolVar(&noBanner, "noBanner", false, "Disable the Nosshtradamus proxy banner")
@@ -322,13 +324,18 @@ func main() {
 	var filter sshproxy.ChannelStreamFilter
 	if !noPrediction || fakeDelay > 0 {
 		filter = func(chanType string, sshChannel ssh.Channel) (io.ReadWriteCloser, sshproxy.ChannelRequestFilter) {
-			var wrapped io.ReadWriteCloser
+			var wrapped io.ReadWriteCloser = sshChannel
 			var reqFilter sshproxy.ChannelRequestFilter
 
 			if chanType == "session" {
 				channelNoCodeset := noCodesetFilter
+				channelTeeEnabled := enableRawTee
 				ioSwitch := predictive.MakeIoSwitch(sshChannel)
 				wrapped = ioSwitch
+				rawTee := predictive.MakeRawTeeWriter(sshChannel, "nosshtradamus/rawStdout")
+				rawTee.Enabled(channelTeeEnabled)
+				var rwc io.ReadWriteCloser = predictive.CombineReaderWriterCloser(io.TeeReader(sshChannel, rawTee),
+					sshChannel, sshChannel)
 
 				if !noPrediction || fakeDelay > 0 {
 					activated := false
@@ -338,14 +345,13 @@ func main() {
 							return
 						}
 						activated = true
-						var rwc io.ReadWriteCloser
-						rwc = sshChannel
 						if fakeDelay > 0 {
-							rwc = predictive.RingDelay(rwc, fakeDelay, 512)
+							rd := predictive.RingDelay(rwc, fakeDelay, 512)
+							rwc = predictive.CombineReaderWriterCloser(rwc, rd, rd)
 						}
 						if !noPrediction {
 							if !channelNoCodeset {
-								rwc = predictive.MakeStdoutFilter(rwc)
+								rwc = predictive.CombineReaderWriterCloser(predictive.MakeStdoutFilter(rwc), rwc, rwc)
 							}
 							options := predictive.GetDefaultInterposerOptions()
 							interposer = predictive.Interpose(rwc, func(interposer *predictive.Interposer,
@@ -356,13 +362,12 @@ func main() {
 								if fakeDelay > 0 {
 									time.Sleep(fakeDelay)
 								}
-								_, _ = sshChannel.SendRequest(fmt.Sprintf("nosshtradamus/ping/%d", epoch),
-									true, nil)
+								_, _ = sshChannel.SendRequest("nosshtradamus/ping", true, nil)
 
 								if printTiming {
 									fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
 								}
-								time.Sleep(time.Second / 60) // delay closing of the epoch by one frame (???)
+								time.Sleep(options.CoalesceInterval) // delay closing of the epoch by one frame
 								interposer.CloseEpoch(epoch, openedAt)
 							}, options)
 							rwc = interposer
@@ -441,6 +446,26 @@ func main() {
 										_ = request.Reply(true, nil)
 									}
 									continue // do not pass through the proxy
+								case "nosshtradamus/rawTee":
+									channelTeeEnabled = truthy(string(request.Payload))
+									rawTee.Enabled(channelTeeEnabled)
+									if request.WantReply {
+										_ = request.Reply(true, nil)
+									}
+									continue // do not pass through the proxy
+								default:
+									if strings.HasPrefix(request.Type, "onion/") {
+										// if multiple proxies are layered, allow sending messages to deeper layers by
+										// prefixing the request with one "onion/" per layer
+										replyOk, err := sshChannel.SendRequest(
+											strings.TrimPrefix(request.Type, "onion/"),
+											request.WantReply,
+											request.Payload)
+										if request.WantReply {
+											_ = request.Reply(replyOk && err == nil, nil)
+										}
+										continue // do not pass the original wrapped request through the proxy
+									}
 								}
 								passthrough <- request
 							}

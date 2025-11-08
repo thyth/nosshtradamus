@@ -24,7 +24,7 @@ import (
 	ttyrec3util "gitlab.hive.thyth.com/chronostruct/ttyrec3/pkg/util"
 )
 
-// StdoutFilter is an io.ReadWriteCloser reader filter that processes standard out intended for the mosh emulator.
+// StdoutFilter is an io.Reader filter that processes standard out intended for the mosh emulator.
 //
 // The mosh terminal emulator apparently has intentionally chosen not to implement ISO 2022 "locking escapes", which are
 // still used by some applications for graphical character drawing in terminal output, requiring emission of UTF-8
@@ -49,7 +49,7 @@ import (
 //
 // It is default enabled for nosshtradamus interactive shells, but can be disabled (prior to 'pty-req') per-channel.
 type StdoutFilter struct {
-	upstream io.ReadWriteCloser
+	upstream io.Reader
 
 	xtermEmulator ttyrec3util.SeqProcessor[byte, byte]
 	pullSlice     *ttyrec3util.PullSliceCloned[byte]
@@ -58,7 +58,7 @@ type StdoutFilter struct {
 }
 
 // MakeStdoutFilter around an upstream io.ReadWriteCloser. Options are optional; supply 0 or 1 only.
-func MakeStdoutFilter(upstream io.ReadWriteCloser, opts ...*ttyrec3util.XtermProcessorOptions) *StdoutFilter {
+func MakeStdoutFilter(upstream io.Reader, opts ...*ttyrec3util.XtermProcessorOptions) *StdoutFilter {
 	opt := &ttyrec3util.XtermProcessorOptions{
 		DisableGraphicalCodesetFilter: false, // this is the default, but spelling out the value/intent explicitly here
 	}
@@ -96,14 +96,4 @@ func (sf *StdoutFilter) Read(p []byte) (n int, err error) {
 		sf.emitter = nil
 	}
 	return
-}
-
-// Write on StdoutFilter passes through to the upstream io.ReadWriteCloser unmodified.
-func (sf *StdoutFilter) Write(p []byte) (int, error) {
-	return sf.upstream.Write(p)
-}
-
-// Close on StdoutFilter passes through to the upstream io.ReadWriteCloser unmodified.
-func (sf *StdoutFilter) Close() error {
-	return sf.upstream.Close()
 }

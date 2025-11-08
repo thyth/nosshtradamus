@@ -1,6 +1,6 @@
 /*
  * nosshtradamus: predictive terminal emulation for SSH
- * Copyright 2019-2023 Daniel Selifonov
+ * Copyright 2019-2025 Daniel Selifonov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,8 @@
 package sshproxy
 
 import (
+	"errors"
+
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/ssh"
 
@@ -117,7 +119,7 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 					select {
 					case question := <-configOpts.ExtraQuestions:
 						asked = true
-						answers, err := challenge(user, question.Message, []string{question.Prompt}, []bool{question.Echo})
+						answers, err := challenge("", question.Message, []string{question.Prompt}, []bool{question.Echo})
 						if err != nil {
 							return nil, err
 						}
@@ -142,7 +144,7 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 				if connErr != nil {
 					msg = connErr.Error()
 				}
-				_, _ = challenge(user, msg, []string{}, []bool{})
+				_, _ = challenge("", msg, []string{}, []bool{})
 			}
 
 			return nil, connErr
@@ -204,7 +206,8 @@ func handleSshChannel(clientSide ssh.Conn, _ ssh.Conn, request ssh.NewChannel,
 	chanType := request.ChannelType()
 	proxyChan, proxyReqs, err := clientSide.OpenChannel(chanType, request.ExtraData())
 	if err != nil {
-		if openChanErr, ok := err.(*ssh.OpenChannelError); ok {
+		var openChanErr *ssh.OpenChannelError
+		if errors.As(err, &openChanErr) {
 			_ = request.Reject(openChanErr.Reason, openChanErr.Message)
 		} else {
 			_ = request.Reject(ssh.ConnectionFailed, err.Error())

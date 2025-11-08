@@ -1,6 +1,6 @@
 /*
  * nosshtradamus: predictive terminal emulation for SSH
- * Copyright 2019-2023 Daniel Selifonov
+ * Copyright 2019-2025 Daniel Selifonov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@ import (
 )
 
 type RingDelayer struct {
-	upstream io.ReadWriteCloser
+	upstream io.WriteCloser
 	delay    time.Duration
 
 	ring     [][]byte
@@ -39,7 +39,7 @@ type RingDelayer struct {
 	notifyChan  chan interface{}
 }
 
-func RingDelay(rwc io.ReadWriteCloser, delay time.Duration, ringSize int) *RingDelayer {
+func RingDelay(rwc io.WriteCloser, delay time.Duration, ringSize int) *RingDelayer {
 	rd := &RingDelayer{
 		upstream: rwc,
 		delay:    delay,
@@ -95,11 +95,6 @@ func (rd *RingDelayer) Close() error {
 	rd.termination = io.EOF
 	close(rd.notifyChan)
 	return rd.upstream.Close()
-}
-
-func (rd *RingDelayer) Read(p []byte) (int, error) {
-	// read is instant -- only writes are delayed for ring delay
-	return rd.upstream.Read(p)
 }
 
 func (rd *RingDelayer) Write(p []byte) (int, error) {
