@@ -328,6 +328,7 @@ func main() {
 			var reqFilter sshproxy.ChannelRequestFilter
 
 			if chanType == "session" {
+				channelNoPrediction := noPrediction
 				channelNoCodeset := noCodesetFilter
 				channelTeeEnabled := enableRawTee
 				ioSwitch := predictive.MakeIoSwitch(sshChannel)
@@ -337,7 +338,7 @@ func main() {
 				var rwc io.ReadWriteCloser = predictive.CombineReaderWriterCloser(io.TeeReader(sshChannel, rawTee),
 					sshChannel, sshChannel)
 
-				if !noPrediction || fakeDelay > 0 {
+				if !channelNoPrediction || fakeDelay > 0 {
 					activated := false
 					var interposer *predictive.Interposer
 					activateInterposer := func() {
@@ -349,7 +350,7 @@ func main() {
 							rd := predictive.RingDelay(rwc, fakeDelay, 512)
 							rwc = predictive.CombineReaderWriterCloser(rwc, rd, rd)
 						}
-						if !noPrediction {
+						if !channelNoPrediction {
 							if !channelNoCodeset {
 								rwc = predictive.CombineReaderWriterCloser(predictive.MakeStdoutFilter(rwc), rwc, rwc)
 							}
@@ -449,6 +450,12 @@ func main() {
 								case "nosshtradamus/rawTee":
 									channelTeeEnabled = truthy(string(request.Payload))
 									rawTee.Enabled(channelTeeEnabled)
+									if request.WantReply {
+										_ = request.Reply(true, nil)
+									}
+									continue // do not pass through the proxy
+								case "nosshtradamus/sessionNoPrediction":
+									channelNoPrediction = truthy(string(request.Payload))
 									if request.WantReply {
 										_ = request.Reply(true, nil)
 									}
