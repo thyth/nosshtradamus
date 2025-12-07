@@ -29,6 +29,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -95,6 +96,7 @@ func main() {
 	authErrDetails := false
 	printTiming := false
 	noBanner := false
+	debugLogs := false
 
 	flag.IntVar(&port, "port", 0, "Proxy listen port")
 	flag.StringVar(&target, "target", "", "Target SSH host")
@@ -112,7 +114,16 @@ func main() {
 	flag.BoolVar(&disableAgent, "a", false, "Disable use of SSH agent for key based authentication")
 	flag.BoolVar(&dumbAuth, "dumbauth", false, "Use 'dumb' authentication (send blank password)")
 	flag.BoolVar(&authErrDetails, "authErr", false, "Show details on authentication errors with target")
+	flag.BoolVar(&debugLogs, "debugLogs", false, "Logs emitted at debug level")
 	flag.Parse()
+
+	logLevel := slog.LevelInfo
+	if debugLogs {
+		logLevel = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: logLevel,
+	}))
 
 	// create a map of SSH client options to their values
 	sshClientOptions := map[string]string{}
@@ -130,6 +141,7 @@ func main() {
 	}
 	// unless overridden by the client
 	if specifiedKnownHost, ok := sshClientOptions["UserKnownHostsFile"]; ok {
+		logger.Debug("UserKnownHostsFile supplied", "known-hosts", specifiedKnownHost)
 		userKnownHostsFile = specifiedKnownHost
 	}
 
@@ -302,6 +314,7 @@ func main() {
 	strictHostChecking := true
 	hostKeyChecker := ssh.InsecureIgnoreHostKey()
 	if specifiedStrictChecking, ok := sshClientOptions["StrictHostKeyChecking"]; ok {
+		logger.Debug("StrictHostKeyChecking supplied", "strict-checking", specifiedStrictChecking)
 		strictHostChecking = truthy(specifiedStrictChecking)
 	}
 	if strictHostChecking && userKnownHostsFile == "" {
@@ -328,6 +341,7 @@ func main() {
 			var reqFilter sshproxy.ChannelRequestFilter
 
 			if chanType == "session" {
+				logger.Debug("activating session channel filter")
 				channelNoPrediction := noPrediction
 				channelNoCodeset := noCodesetFilter
 				channelTeeEnabled := enableRawTee
@@ -345,6 +359,7 @@ func main() {
 						if activated {
 							return
 						}
+						logger.Debug("activated session interposer")
 						activated = true
 						if fakeDelay > 0 {
 							rd := predictive.RingDelay(rwc, fakeDelay, 512)
@@ -387,6 +402,8 @@ func main() {
 								case "pty-req":
 									ptyreq, err := sshproxy.InterpretPtyReq(request.Payload)
 									if err == nil {
+										logger.Debug("pty-req", "width", ptyreq.Width,
+											"height", ptyreq.Height, "term", ptyreq.Term)
 										activateInterposer()
 										if interposer != nil {
 											interposer.Resize(int(ptyreq.Width), int(ptyreq.Height))
@@ -395,6 +412,8 @@ func main() {
 								case "window-change":
 									winch, err := sshproxy.InterpretWindowChange(request.Payload)
 									if err == nil && interposer != nil {
+										logger.Debug("window-change", "width", winch.Width,
+											"height", winch.Height)
 										interposer.Resize(int(winch.Width), int(winch.Height))
 									}
 								case "nosshtradamus/displayPreference":
@@ -402,6 +421,7 @@ func main() {
 										continue
 									}
 									preference := strings.ToLower(string(request.Payload))
+									logger.Debug("display-preference", "preference", preference)
 									switch preference {
 									case "always":
 										interposer.ChangeDisplayPreference(predictive.PredictAlways)
@@ -423,12 +443,17 @@ func main() {
 										if request.WantReply {
 											_ = request.Reply(true, nil)
 										}
+									default:
+										if request.WantReply {
+											_ = request.Reply(false, nil)
+										}
 									}
 									continue // do not pass through the proxy
 								case "nosshtradamus/predictOverwrite":
 									if interposer == nil {
 										continue
 									}
+									logger.Debug("predict-overwrite", "setting", string(request.Payload))
 									if truthy(string(request.Payload)) {
 										interposer.ChangeOverwritePrediction(true)
 										if request.WantReply {
@@ -443,12 +468,14 @@ func main() {
 									continue // do not pass through the proxy
 								case "nosshtradamus/disableCodesetFilter":
 									channelNoCodeset = truthy(string(request.Payload))
+									logger.Debug("disable-codeset-filter", "setting", channelNoCodeset)
 									if request.WantReply {
 										_ = request.Reply(true, nil)
 									}
 									continue // do not pass through the proxy
 								case "nosshtradamus/rawTee":
 									channelTeeEnabled = truthy(string(request.Payload))
+									logger.Debug("raw-tee", "setting", channelTeeEnabled)
 									rawTee.Enabled(channelTeeEnabled)
 									if request.WantReply {
 										_ = request.Reply(true, nil)
@@ -456,11 +483,14 @@ func main() {
 									continue // do not pass through the proxy
 								case "nosshtradamus/sessionNoPrediction":
 									channelNoPrediction = truthy(string(request.Payload))
+									logger.Debug("session-no-prediction", "setting", channelNoPrediction)
 									if request.WantReply {
 										_ = request.Reply(true, nil)
 									}
 									continue // do not pass through the proxy
 								default:
+									logger.Debug("generic-request", "type", request.Type,
+										"want-reply", request.WantReply, "payload-size", len(request.Payload))
 									if strings.HasPrefix(request.Type, "onion/") {
 										// if multiple proxies are layered, allow sending messages to deeper layers by
 										// prefixing the request with one "onion/" per layer
@@ -493,6 +523,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		logger.Debug("listener established", "port", port)
 		banner := func(conn ssh.ConnMetadata) string {
 			return fmt.Sprintf("Nosshtradamus proxying ~ %s@%v\n", conn.User(), target)
 		}
@@ -508,6 +539,8 @@ func main() {
 			ReportAuthErr:    authErrDetails,
 			ExtraQuestions:   extraQuestions,
 			BlockAgent:       !agentForward,
+
+			Logger: logger,
 		})
 		if err != nil {
 			panic(err)

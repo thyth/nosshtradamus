@@ -19,13 +19,13 @@
 package sshproxy
 
 import (
-	"errors"
-
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/ssh"
 
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"time"
 )
@@ -39,6 +39,8 @@ type ProxyConfig struct {
 	ReportAuthErr    bool
 	ExtraQuestions   chan *ProxiedAuthQuestion
 	BlockAgent       bool
+
+	Logger *slog.Logger
 }
 
 type ProxiedAuthQuestion struct {
@@ -93,15 +95,18 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 	reportAuthErr := configOpts.ReportAuthErr
 	banner := configOpts.Banner
 
+	logger := configOpts.Logger
+
 	var proxyConn *ssh.Client
 	config := &ssh.ServerConfig{
 		KeyboardInteractiveCallback: func(conn ssh.ConnMetadata,
 			challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
 			user := conn.User()
 			var connErr error
-			established := make(chan interface{})
+			established := make(chan any)
 			go func() {
 				// connecting to the remote host only when the proxy has enough information to make the connection
+				logger.Debug("connecting to target", "user", user, "target", target)
 				proxyConn, connErr = ssh.Dial("tcp", target.String(), &ssh.ClientConfig{
 					User:            user,
 					Timeout:         defaultTimeout,
@@ -163,6 +168,7 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 		if err != nil {
 			continue
 		}
+		logger.Debug("accepted connection", "client", conn.RemoteAddr())
 
 		sshConn, chans, reqs, err := ssh.NewServerConn(conn, config)
 		if err != nil {
@@ -170,7 +176,7 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 		}
 		go func(proxyConn *ssh.Client, sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) {
 			// reflect connection level requests from the client; can the server initiate such requests, or just reply?
-			go reflectGlobalRequests(proxyConn, reqs)
+			go reflectGlobalRequests(logger, proxyConn, reqs)
 
 			// capture target server initiated channels; due to limitations of Go Crypto's SSH client, this is concrete,
 			// specifying a closed set of supported channels. specifically supporting SSH agent forwarding. alterations
@@ -182,46 +188,56 @@ func RunProxy(listener net.Listener, target net.Addr, configOpts *ProxyConfig) e
 						_ = channelRequest.Reject(ssh.Prohibited, "agent forwarding prohibited")
 						continue
 					}
-					go handleSshChannel(sshConn, proxyConn, channelRequest, nil)
+					logger.Debug("auth-agent@openssh.com opened by target",
+						"target", proxyConn.Conn.RemoteAddr(), "client", conn.RemoteAddr(),
+						"type", channelRequest.ChannelType())
+					go handleSshChannel(logger, sshConn, proxyConn, channelRequest, nil)
 				}
 			}()
 
-			handleSshClientChannels(proxyConn, sshConn, chans, filter)
+			handleSshClientChannels(logger, proxyConn, sshConn, chans, filter)
 
 			_ = proxyConn.Close()
 		}(proxyConn, sshConn, chans, reqs)
 	}
 }
 
-func handleSshClientChannels(proxyConn *ssh.Client, client *ssh.ServerConn, nc <-chan ssh.NewChannel,
-	filter ChannelStreamFilter) {
+func handleSshClientChannels(logger *slog.Logger, proxyConn *ssh.Client, client *ssh.ServerConn,
+	nc <-chan ssh.NewChannel, filter ChannelStreamFilter) {
 	for channelRequest := range nc {
-		go handleSshChannel(proxyConn, client, channelRequest, filter)
+		logger.Debug("new channel request", "client", client.Conn.RemoteAddr(),
+			"type", channelRequest.ChannelType())
+		go handleSshChannel(logger, proxyConn, client, channelRequest, filter)
 	}
 }
 
-func handleSshChannel(clientSide ssh.Conn, _ ssh.Conn, request ssh.NewChannel,
+func handleSshChannel(logger *slog.Logger, targetSide ssh.Conn, clientSide ssh.Conn, request ssh.NewChannel,
 	filter ChannelStreamFilter) {
 
 	chanType := request.ChannelType()
-	proxyChan, proxyReqs, err := clientSide.OpenChannel(chanType, request.ExtraData())
+	proxyChan, proxyReqs, err := targetSide.OpenChannel(chanType, request.ExtraData())
 	if err != nil {
+		logger.Debug("failed to open proxied channel to target", "error", err,
+			"target", targetSide.RemoteAddr(), "client", clientSide.RemoteAddr())
 		var openChanErr *ssh.OpenChannelError
 		if errors.As(err, &openChanErr) {
 			_ = request.Reject(openChanErr.Reason, openChanErr.Message)
 		} else {
 			_ = request.Reject(ssh.ConnectionFailed, err.Error())
 		}
+		return
 	}
 
 	clientChan, clientReqs, err := request.Accept()
 	if err != nil {
+		logger.Debug("failed to accept proxied channel request", "error", err,
+			"target", targetSide.RemoteAddr(), "client", clientSide.RemoteAddr())
 		_ = proxyChan.Close()
 		return
 	}
 
-	clientClosed := make(chan interface{})
-	serverClosed := make(chan interface{})
+	clientClosed := make(chan any)
+	serverClosed := make(chan any)
 
 	var copyTarget io.ReadWriteCloser
 	var requestFilter ChannelRequestFilter
@@ -231,7 +247,9 @@ func handleSshChannel(clientSide ssh.Conn, _ ssh.Conn, request ssh.NewChannel,
 	if copyTarget == nil {
 		copyTarget = proxyChan
 	}
-	var clientRequestSink ChannelRequestSink = reflectRequests
+	var clientRequestSink ChannelRequestSink = func(recipient ssh.Channel, sender <-chan *ssh.Request) {
+		reflectRequests(logger, recipient, sender)
+	}
 	if requestFilter != nil {
 		clientRequestSink = requestFilter(clientRequestSink)
 	}
@@ -258,15 +276,17 @@ func handleSshChannel(clientSide ssh.Conn, _ ssh.Conn, request ssh.NewChannel,
 		}
 	}()
 	go func() {
-		reflectRequests(clientChan, proxyReqs) // server closed connection for channel requests
+		reflectRequests(logger, clientChan, proxyReqs) // server closed connection for channel requests
 		<-serverClosed
 		_ = clientChan.Close()
 	}()
 }
 
-func reflectRequests(recipient ssh.Channel, sender <-chan *ssh.Request) {
+func reflectRequests(logger *slog.Logger, recipient ssh.Channel, sender <-chan *ssh.Request) {
 	for request := range sender {
 		reply, err := recipient.SendRequest(request.Type, request.WantReply, request.Payload)
+		logger.Debug("reflected channel request", "type", request.Type, "want-reply", request.WantReply,
+			"payload", len(request.Payload), "reply", reply, "error", err)
 		if request.WantReply {
 			if err != nil {
 				_ = request.Reply(false, nil)
@@ -280,9 +300,12 @@ func reflectRequests(recipient ssh.Channel, sender <-chan *ssh.Request) {
 	}
 }
 
-func reflectGlobalRequests(recipient ssh.Conn, sender <-chan *ssh.Request) {
+func reflectGlobalRequests(logger *slog.Logger, recipient ssh.Conn, sender <-chan *ssh.Request) {
 	for request := range sender {
 		reply, payload, err := recipient.SendRequest(request.Type, request.WantReply, request.Payload)
+		logger.Debug("reflected global request", "recipient", recipient.RemoteAddr(),
+			"type", request.Type, "want-reply", request.WantReply, "request-payload", len(request.Payload),
+			"reply", reply, "reply-payload", len(payload), "error", err)
 		if request.WantReply {
 			if err != nil {
 				_ = request.Reply(false, nil)
