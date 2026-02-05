@@ -256,11 +256,15 @@ func handleSshChannel(logger *slog.Logger, targetSide ssh.Conn, clientSide ssh.C
 
 	// copy data across both channels
 	go func() {
+		logger.Debug("started io.Copy client->server", "chanType", chanType,
+			"target", targetSide.RemoteAddr(), "client", clientSide.RemoteAddr())
 		_, _ = io.Copy(copyTarget, clientChan) // client closed connection for channel writes
 		_ = proxyChan.CloseWrite()
 		close(clientClosed)
 	}()
 	go func() {
+		logger.Debug("started io.Copy server->client", "chanType", chanType,
+			"target", targetSide.RemoteAddr(), "client", clientSide.RemoteAddr())
 		_, _ = io.Copy(clientChan, copyTarget) // server closed connection for channel writes
 		_ = clientChan.CloseWrite()
 		close(serverClosed)
@@ -268,6 +272,8 @@ func handleSshChannel(logger *slog.Logger, targetSide ssh.Conn, clientSide ssh.C
 
 	// copy requests across both channels
 	go func() {
+		logger.Debug("started proxying client->server channel requests", "chanType", chanType,
+			"target", targetSide.RemoteAddr(), "client", clientSide.RemoteAddr())
 		clientRequestSink(proxyChan, clientReqs) // client closed connection for channel requests
 		<-clientClosed
 		_ = proxyChan.Close()
@@ -276,6 +282,8 @@ func handleSshChannel(logger *slog.Logger, targetSide ssh.Conn, clientSide ssh.C
 		}
 	}()
 	go func() {
+		logger.Debug("started proxying server->client channel requests", "chanType", chanType,
+			"target", targetSide.RemoteAddr(), "client", clientSide.RemoteAddr())
 		reflectRequests(logger, clientChan, proxyReqs) // server closed connection for channel requests
 		<-serverClosed
 		_ = clientChan.Close()

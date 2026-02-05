@@ -390,6 +390,7 @@ func main() {
 						}
 
 						ioSwitch.Enable(rwc)
+						logger.Debug("interposer ioSwitch enabled")
 					}
 
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
