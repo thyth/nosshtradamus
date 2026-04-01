@@ -113,6 +113,8 @@ type InterposerOptions struct {
 	CoalesceInterval         time.Duration
 	DisplayPreference        DisplayPreference
 	DisplayPredictOverwrites bool
+	SkipOpen                 bool
+	SkipInitialize           bool
 }
 
 // GetDefaultInterposerOptions produces a set of reasonable defaults for the interposer's prediction and coalescing
@@ -163,8 +165,8 @@ func Interpose(rwc io.ReadWriteCloser, openEpoch func(interposer *Interposer, ep
 
 		openEpoch: openEpoch,
 
-		opened:      false,
-		initialized: false,
+		opened:      options.SkipOpen,
+		initialized: options.SkipInitialize,
 	}
 	inter.predictor.SetDisplayPreference(overlay.DisplayPreference(options.DisplayPreference))
 	inter.predictor.SetPredictOverwrite(options.DisplayPredictOverwrites)

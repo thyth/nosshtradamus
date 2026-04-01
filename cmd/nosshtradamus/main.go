@@ -355,6 +355,7 @@ func main() {
 				if !channelNoPrediction || fakeDelay > 0 {
 					activated := false
 					var interposer *predictive.Interposer
+					options := predictive.GetDefaultInterposerOptions()
 					activateInterposer := func() {
 						if activated {
 							return
@@ -369,7 +370,6 @@ func main() {
 							if !channelNoCodeset {
 								rwc = predictive.CombineReaderWriterCloser(predictive.MakeStdoutFilter(rwc), rwc, rwc)
 							}
-							options := predictive.GetDefaultInterposerOptions()
 							interposer = predictive.Interpose(rwc, func(interposer *predictive.Interposer,
 								epoch uint64, openedAt time.Time) {
 								if printTiming {
@@ -485,6 +485,20 @@ func main() {
 								case "nosshtradamus/sessionNoPrediction":
 									channelNoPrediction = truthy(string(request.Payload))
 									logger.Debug("session-no-prediction", "setting", channelNoPrediction)
+									if request.WantReply {
+										_ = request.Reply(true, nil)
+									}
+									continue // do not pass through the proxy
+								case "nosshtradamus/skipOpen":
+									options.SkipOpen = truthy(string(request.Payload))
+									logger.Debug("skip-open", "setting", options.SkipOpen)
+									if request.WantReply {
+										_ = request.Reply(true, nil)
+									}
+									continue // do not pass through the proxy
+								case "nosshtradamus/skipInitialize":
+									options.SkipInitialize = truthy(string(request.Payload))
+									logger.Debug("skip-initialize", "setting", options.SkipOpen)
 									if request.WantReply {
 										_ = request.Reply(true, nil)
 									}
