@@ -214,6 +214,11 @@ func (i *Interposer) CloseEpoch(epoch uint64, openedAt time.Time) {
 	}
 }
 
+// Inject terminal data directly into the emulator to manipulate state exogenously from the proxied server data stream.
+func (i *Interposer) Inject(data []byte) {
+	_ = i.emulator.Perform(string(data))
+}
+
 func (i *Interposer) pullFromUpstream() {
 	upstreamBuffer := make([]byte, 4096)
 	for {
