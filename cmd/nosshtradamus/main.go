@@ -351,8 +351,9 @@ func main() {
 				rawTee := predictive.MakeRawTeeWriter(sshChannel, "nosshtradamus/rawStdout")
 				rawTee.Enabled(channelTeeEnabled)
 				rawTeeReader := io.TeeReader(sshChannel, rawTee)
-				ioSwitch := predictive.MakeIoSwitch(predictive.CombineReaderWriterCloser(rawTeeReader,
-					sshChannel, sshChannel))
+				passthroughRwc := predictive.CombineReaderWriterCloser(rawTeeReader,
+					sshChannel, sshChannel)
+				ioSwitch := predictive.MakeIoSwitch(passthroughRwc)
 				readerSpigot := predictive.MakeSpigotReader(ioSwitch)
 				var rwc io.ReadWriteCloser = predictive.CombineReaderWriterCloser(readerSpigot,
 					ioSwitch, ioSwitch)
@@ -372,7 +373,7 @@ func main() {
 						if activated {
 							return
 						}
-						interposedRwc := rwc
+						var interposedRwc io.ReadWriteCloser = passthroughRwc
 						logger.Debug("activated session interposer")
 						activated = true
 						if fakeDelay > 0 {
@@ -406,7 +407,7 @@ func main() {
 							interposedRwc = interposer
 						}
 
-						if rwc != interposedRwc {
+						if passthroughRwc != interposedRwc {
 							ioSwitch.Enable(interposedRwc)
 							logger.Debug("interposer ioSwitch enabled")
 						}
