@@ -338,8 +338,8 @@ func main() {
 
 	var filter sshproxy.ChannelStreamFilter
 	if !noPrediction || fakeDelay > 0 {
-		filter = func(chanType string, sshChannel ssh.Channel) (io.ReadWriteCloser, sshproxy.ChannelRequestFilter) {
-			var wrapped io.ReadWriteCloser = sshChannel
+		filter = func(chanType string, clientChan, targetChan ssh.Channel) (io.ReadWriteCloser, sshproxy.ChannelRequestFilter) {
+			var wrapped io.ReadWriteCloser = targetChan
 			var reqFilter sshproxy.ChannelRequestFilter
 
 			if chanType == "session" {
@@ -348,11 +348,11 @@ func main() {
 				channelNoCodeset := noCodesetFilter
 				channelTeeEnabled := enableRawTee
 
-				rawTee := predictive.MakeRawTeeWriter(sshChannel, "nosshtradamus/rawStdout")
+				rawTee := predictive.MakeRawTeeWriter(clientChan, "nosshtradamus/rawStdout")
 				rawTee.Enabled(channelTeeEnabled)
-				rawTeeReader := io.TeeReader(sshChannel, rawTee)
+				rawTeeReader := io.TeeReader(targetChan, rawTee)
 				passthroughRwc := predictive.CombineReaderWriterCloser(rawTeeReader,
-					sshChannel, sshChannel)
+					targetChan, targetChan)
 				ioSwitch := predictive.MakeIoSwitch(passthroughRwc)
 				readerSpigot := predictive.MakeSpigotReader(ioSwitch)
 				var rwc io.ReadWriteCloser = predictive.CombineReaderWriterCloser(readerSpigot,
@@ -393,7 +393,7 @@ func main() {
 								if fakeDelay > 0 {
 									time.Sleep(fakeDelay)
 								}
-								_, _ = sshChannel.SendRequest("nosshtradamus/ping", true, nil)
+								_, _ = targetChan.SendRequest("nosshtradamus/ping", true, nil)
 
 								if printTiming {
 									fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
@@ -543,7 +543,7 @@ func main() {
 									if strings.HasPrefix(request.Type, "onion/") {
 										// if multiple proxies are layered, allow sending messages to deeper layers by
 										// prefixing the request with one "onion/" per layer
-										replyOk, err := sshChannel.SendRequest(
+										replyOk, err := targetChan.SendRequest(
 											strings.TrimPrefix(request.Type, "onion/"),
 											request.WantReply,
 											request.Payload)
