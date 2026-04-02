@@ -1,6 +1,6 @@
 /*
  * nosshtradamus: predictive terminal emulation for SSH
- * Copyright 2019-2025 Daniel Selifonov
+ * Copyright 2019-2026 Daniel Selifonov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -97,6 +97,7 @@ func main() {
 	printTiming := false
 	noBanner := false
 	debugLogs := false
+	var autoOpen time.Duration
 
 	flag.IntVar(&port, "port", 0, "Proxy listen port")
 	flag.StringVar(&target, "target", "", "Target SSH host")
@@ -115,6 +116,7 @@ func main() {
 	flag.BoolVar(&dumbAuth, "dumbauth", false, "Use 'dumb' authentication (send blank password)")
 	flag.BoolVar(&authErrDetails, "authErr", false, "Show details on authentication errors with target")
 	flag.BoolVar(&debugLogs, "debugLogs", false, "Logs emitted at debug level")
+	flag.DurationVar(&autoOpen, "autoOpenDelay", 500*time.Millisecond, "delay before auto-opening session reader spigot")
 	flag.Parse()
 
 	logLevel := slog.LevelInfo
@@ -336,8 +338,8 @@ func main() {
 
 	var filter sshproxy.ChannelStreamFilter
 	if !noPrediction || fakeDelay > 0 {
-		filter = func(chanType string, sshChannel ssh.Channel) (io.ReadWriteCloser, sshproxy.ChannelRequestFilter) {
-			var wrapped io.ReadWriteCloser = sshChannel
+		filter = func(chanType string, clientChan, targetChan ssh.Channel) (io.ReadWriteCloser, sshproxy.ChannelRequestFilter) {
+			var wrapped io.ReadWriteCloser = targetChan
 			var reqFilter sshproxy.ChannelRequestFilter
 
 			if chanType == "session" {
@@ -345,32 +347,45 @@ func main() {
 				channelNoPrediction := noPrediction
 				channelNoCodeset := noCodesetFilter
 				channelTeeEnabled := enableRawTee
-				ioSwitch := predictive.MakeIoSwitch(sshChannel)
-				wrapped = ioSwitch
-				rawTee := predictive.MakeRawTeeWriter(sshChannel, "nosshtradamus/rawStdout")
+
+				rawTee := predictive.MakeRawTeeWriter(clientChan, "nosshtradamus/rawStdout")
 				rawTee.Enabled(channelTeeEnabled)
-				var rwc io.ReadWriteCloser = predictive.CombineReaderWriterCloser(io.TeeReader(sshChannel, rawTee),
-					sshChannel, sshChannel)
+				rawTeeReader := io.TeeReader(targetChan, rawTee)
+				passthroughRwc := predictive.CombineReaderWriterCloser(rawTeeReader,
+					targetChan, targetChan)
+				ioSwitch := predictive.MakeIoSwitch(passthroughRwc)
+				readerSpigot := predictive.MakeSpigotReader(ioSwitch)
+				var rwc io.ReadWriteCloser = predictive.CombineReaderWriterCloser(readerSpigot,
+					ioSwitch, ioSwitch)
+				wrapped = rwc
+				time.AfterFunc(autoOpen, func() {
+					if readerSpigot.Open() {
+						logger.Debug("readerSpigot opened after auto-open timeout")
+					}
+				})
 
 				if !channelNoPrediction || fakeDelay > 0 {
 					activated := false
 					var interposer *predictive.Interposer
+					options := predictive.GetDefaultInterposerOptions()
+					var exogenousState []byte
 					activateInterposer := func() {
 						if activated {
 							return
 						}
+						var interposedRwc io.ReadWriteCloser = passthroughRwc
 						logger.Debug("activated session interposer")
 						activated = true
 						if fakeDelay > 0 {
-							rd := predictive.RingDelay(rwc, fakeDelay, 512)
-							rwc = predictive.CombineReaderWriterCloser(rwc, rd, rd)
+							rd := predictive.RingDelay(interposedRwc, fakeDelay, 512)
+							interposedRwc = predictive.CombineReaderWriterCloser(interposedRwc, rd, rd)
 						}
 						if !channelNoPrediction {
 							if !channelNoCodeset {
-								rwc = predictive.CombineReaderWriterCloser(predictive.MakeStdoutFilter(rwc), rwc, rwc)
+								interposedRwc = predictive.CombineReaderWriterCloser(
+									predictive.MakeStdoutFilter(interposedRwc), interposedRwc, interposedRwc)
 							}
-							options := predictive.GetDefaultInterposerOptions()
-							interposer = predictive.Interpose(rwc, func(interposer *predictive.Interposer,
+							interposer = predictive.Interpose(interposedRwc, func(interposer *predictive.Interposer,
 								epoch uint64, openedAt time.Time) {
 								if printTiming {
 									fmt.Printf("Ping %d\n", epoch)
@@ -378,7 +393,7 @@ func main() {
 								if fakeDelay > 0 {
 									time.Sleep(fakeDelay)
 								}
-								_, _ = sshChannel.SendRequest("nosshtradamus/ping", true, nil)
+								_, _ = targetChan.SendRequest("nosshtradamus/ping", true, nil)
 
 								if printTiming {
 									fmt.Printf("Pong %d - (%v)\n", epoch, time.Now().Sub(openedAt))
@@ -386,10 +401,19 @@ func main() {
 								time.Sleep(options.CoalesceInterval) // delay closing of the epoch by one frame
 								interposer.CloseEpoch(epoch, openedAt)
 							}, options)
-							rwc = interposer
+							if exogenousState != nil {
+								interposer.Inject(exogenousState)
+							}
+							interposedRwc = interposer
 						}
 
-						ioSwitch.Enable(rwc)
+						if passthroughRwc != interposedRwc {
+							ioSwitch.Enable(interposedRwc)
+							logger.Debug("interposer ioSwitch enabled")
+						}
+						if readerSpigot.Open() {
+							logger.Debug("readerSpigot opened upon activateInterposer")
+						}
 					}
 
 					reqFilter = func(sink sshproxy.ChannelRequestSink) sshproxy.ChannelRequestSink {
@@ -488,13 +512,38 @@ func main() {
 										_ = request.Reply(true, nil)
 									}
 									continue // do not pass through the proxy
+								case "nosshtradamus/skipOpen":
+									options.SkipOpen = truthy(string(request.Payload))
+									logger.Debug("skip-open", "setting", options.SkipOpen)
+									if request.WantReply {
+										_ = request.Reply(true, nil)
+									}
+									continue // do not pass through the proxy
+								case "nosshtradamus/skipInitialize":
+									options.SkipInitialize = truthy(string(request.Payload))
+									logger.Debug("skip-initialize", "setting", options.SkipOpen)
+									if request.WantReply {
+										_ = request.Reply(true, nil)
+									}
+									continue // do not pass through the proxy
+								case "nosshtradamus/stateFeed":
+									exogenousState = request.Payload
+									if l := len(exogenousState); l > 0 {
+										logger.Debug("state-feed", "size", len(exogenousState))
+										options.SkipOpen = true
+										options.SkipInitialize = true
+									}
+									if request.WantReply {
+										_ = request.Reply(true, nil)
+									}
+									continue // do not pass through the proxy
 								default:
 									logger.Debug("generic-request", "type", request.Type,
 										"want-reply", request.WantReply, "payload-size", len(request.Payload))
 									if strings.HasPrefix(request.Type, "onion/") {
 										// if multiple proxies are layered, allow sending messages to deeper layers by
 										// prefixing the request with one "onion/" per layer
-										replyOk, err := sshChannel.SendRequest(
+										replyOk, err := targetChan.SendRequest(
 											strings.TrimPrefix(request.Type, "onion/"),
 											request.WantReply,
 											request.Payload)

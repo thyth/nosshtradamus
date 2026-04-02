@@ -1,6 +1,6 @@
 /*
  * nosshtradamus: predictive terminal emulation for SSH
- * Copyright 2019-2025 Daniel Selifonov
+ * Copyright 2019-2026 Daniel Selifonov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -78,8 +78,9 @@ var (
 	}
 )
 
-// A ChannelStreamFilter optionally encapsulates/wraps an SSH channel of the specified channel type.
-type ChannelStreamFilter func(channelType string, c ssh.Channel) (io.ReadWriteCloser, ChannelRequestFilter)
+// A ChannelStreamFilter optionally encapsulates/wraps a target SSH channel of the specified channel type. The client
+// SSH channel is also supplied (e.g. to send requests that aren't originated from the target).
+type ChannelStreamFilter func(channelType string, client, target ssh.Channel) (io.ReadWriteCloser, ChannelRequestFilter)
 
 // A ChannelRequestSink encapsulates a channel of SSH requests being sent to a recipient channel.
 type ChannelRequestSink func(recipient ssh.Channel, sender <-chan *ssh.Request)
@@ -242,7 +243,7 @@ func handleSshChannel(logger *slog.Logger, targetSide ssh.Conn, clientSide ssh.C
 	var copyTarget io.ReadWriteCloser
 	var requestFilter ChannelRequestFilter
 	if filter != nil {
-		copyTarget, requestFilter = filter(chanType, proxyChan)
+		copyTarget, requestFilter = filter(chanType, clientChan, proxyChan)
 	}
 	if copyTarget == nil {
 		copyTarget = proxyChan
@@ -256,11 +257,15 @@ func handleSshChannel(logger *slog.Logger, targetSide ssh.Conn, clientSide ssh.C
 
 	// copy data across both channels
 	go func() {
+		logger.Debug("started io.Copy client->server", "chanType", chanType,
+			"target", targetSide.RemoteAddr(), "client", clientSide.RemoteAddr())
 		_, _ = io.Copy(copyTarget, clientChan) // client closed connection for channel writes
 		_ = proxyChan.CloseWrite()
 		close(clientClosed)
 	}()
 	go func() {
+		logger.Debug("started io.Copy server->client", "chanType", chanType,
+			"target", targetSide.RemoteAddr(), "client", clientSide.RemoteAddr())
 		_, _ = io.Copy(clientChan, copyTarget) // server closed connection for channel writes
 		_ = clientChan.CloseWrite()
 		close(serverClosed)
@@ -268,6 +273,8 @@ func handleSshChannel(logger *slog.Logger, targetSide ssh.Conn, clientSide ssh.C
 
 	// copy requests across both channels
 	go func() {
+		logger.Debug("started proxying client->server channel requests", "chanType", chanType,
+			"target", targetSide.RemoteAddr(), "client", clientSide.RemoteAddr())
 		clientRequestSink(proxyChan, clientReqs) // client closed connection for channel requests
 		<-clientClosed
 		_ = proxyChan.Close()
@@ -276,6 +283,8 @@ func handleSshChannel(logger *slog.Logger, targetSide ssh.Conn, clientSide ssh.C
 		}
 	}()
 	go func() {
+		logger.Debug("started proxying server->client channel requests", "chanType", chanType,
+			"target", targetSide.RemoteAddr(), "client", clientSide.RemoteAddr())
 		reflectRequests(logger, clientChan, proxyReqs) // server closed connection for channel requests
 		<-serverClosed
 		_ = clientChan.Close()

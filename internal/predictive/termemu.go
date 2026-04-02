@@ -113,6 +113,8 @@ type InterposerOptions struct {
 	CoalesceInterval         time.Duration
 	DisplayPreference        DisplayPreference
 	DisplayPredictOverwrites bool
+	SkipOpen                 bool
+	SkipInitialize           bool
 }
 
 // GetDefaultInterposerOptions produces a set of reasonable defaults for the interposer's prediction and coalescing
@@ -163,8 +165,8 @@ func Interpose(rwc io.ReadWriteCloser, openEpoch func(interposer *Interposer, ep
 
 		openEpoch: openEpoch,
 
-		opened:      false,
-		initialized: false,
+		opened:      options.SkipOpen,
+		initialized: options.SkipInitialize,
 	}
 	inter.predictor.SetDisplayPreference(overlay.DisplayPreference(options.DisplayPreference))
 	inter.predictor.SetPredictOverwrite(options.DisplayPredictOverwrites)
@@ -210,6 +212,11 @@ func (i *Interposer) CloseEpoch(epoch uint64, openedAt time.Time) {
 	default:
 		i.droppedUpdate = true
 	}
+}
+
+// Inject terminal data directly into the emulator to manipulate state exogenously from the proxied server data stream.
+func (i *Interposer) Inject(data []byte) {
+	_ = i.emulator.Perform(string(data))
 }
 
 func (i *Interposer) pullFromUpstream() {
