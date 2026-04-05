@@ -216,8 +216,18 @@ func (i *Interposer) CloseEpoch(epoch uint64, openedAt time.Time) {
 }
 
 // Inject terminal data directly into the emulator to manipulate state exogenously from the proxied server data stream.
-func (i *Interposer) Inject(data []byte) {
+// The interposer will automatically be resized to the dimensions specified in the terminal data payload, and valid
+// payloads MUST include window dimensions.
+func (i *Interposer) Inject(data []byte) error {
+	width, height, err := PayloadWindowDimensions(data)
+	if err != nil {
+		return err
+	}
+	i.emulatorMutex.Lock()
+	defer i.emulatorMutex.Unlock()
+	i.resize(width, height)
 	_ = i.emulator.Perform(string(data))
+	return nil
 }
 
 func (i *Interposer) pullFromUpstream() {
@@ -422,6 +432,11 @@ func (i *Interposer) Write(p []byte) (int, error) {
 func (i *Interposer) Resize(w, h int) {
 	i.emulatorMutex.Lock()
 	defer i.emulatorMutex.Unlock()
+	i.resize(w, h)
+}
+
+// resize must operate under `i.emulatorMutex`.
+func (i *Interposer) resize(w, h int) {
 	i.emulator.Act(parser.MakeResize(int64(w), int64(h)))
 	i.width, i.height = w, h
 	i.predictor.Reset()

@@ -42,8 +42,9 @@ func TestInterposer_CurrentContents(t *testing.T) {
 		interposer.CloseEpoch(epoch, openedAt)
 	}, GetDefaultInterposerOptions())
 
-	interposer.Resize(100, 40) // TODO make Inject recognize resize sequences?
-	interposer.Inject(testKeyframe)
+	if injectErr := interposer.Inject(testKeyframe); injectErr != nil {
+		t.Fatal(injectErr)
+	}
 	postInjectContents := []byte(interposer.CurrentContents(true))
 	if !slices.Equal(testKeyframe, postInjectContents) {
 		t.Errorf("Unexpected contents: %02x", postInjectContents)
