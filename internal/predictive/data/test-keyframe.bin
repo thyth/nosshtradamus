@@ -1,0 +1,40 @@
+[8;40;100t]0;ubuntu@chroniton: ~[?5l[r[0m[H[2J[?25lWelcome to Ubuntu 22.04.5 LTS (GNU/Linux 4.4.0 x86_64)[K
+[K
+ * Documentation:  https://help.ubuntu.com[K
+ * Management:     https://landscape.canonical.com[K
+ * Support:        https://ubuntu.com/pro[K
+To run a command as administrator (user "root"), use "sudo <command>".[K
+See "man sudo_root" for details.[K
+[K
+[0;1;32mubuntu@chroniton[0m:[0;1;34m~[0m$ ps aux[K
+USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND[K
+root         1  2.8  0.0  10848  3876 ?        Ss   06:56   0:00 /sbin/tini -- /sbin/chronitond[K
+root         2 14.4  0.4 1238204 16252 ?       Sl   06:56   0:02 /sbin/chronitond[K
+root         9 13.3  0.1  15396  7248 ?        Ss   06:57   0:01 /bin/login -p -f[K
+ubuntu      19 12.8  0.2  18304 10432 ?        S    06:57   0:00 -bash[K
+ubuntu      28 58.0  0.3  20740 12876 ?        R    06:57   0:00 ps aux[K
+[0;1;32mubuntu@chroniton[0m:[0;1;34m~[0m$ df -T -h[K
+Filesystem     Type   Size  Used Avail Use% Mounted on[K
+none           9p    1009M  634M  375M  63% /[K
+none           dev    2.0G     0  2.0G   0% /dev[K
+none           tmpfs  2.0G     0  2.0G   0% /tmp[K
+[0;1;32mubuntu@chroniton[0m:[0;1;34m~[0m$ python3[K
+Python 3.10.12 (main, Aug 15 2025, 14:32:43) [GCC 11.4.0] on linux[K
+Type "help", "copyright", "credits" or "license" for more information.[K
+>>> a = 123[K
+>>> a[K
+123[K
+>>> [K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[27;5H[?25h[0m[?2004l[?1003l[?1002l[?1001l[?1000l[?1004l[?1015l[?1006l[?1005l

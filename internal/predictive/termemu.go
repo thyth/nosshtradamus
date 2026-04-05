@@ -1,6 +1,6 @@
 /*
  * nosshtradamus: predictive terminal emulation for SSH
- * Copyright 2019-2024 Daniel Selifonov
+ * Copyright 2019-2026 Daniel Selifonov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ import (
 	"gitlab.hive.thyth.com/chronostruct/go-mosh/pkg/mosh/terminal"
 
 	"bytes"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -422,8 +423,8 @@ func (i *Interposer) Resize(w, h int) {
 	i.emulatorMutex.Lock()
 	defer i.emulatorMutex.Unlock()
 	i.emulator.Act(parser.MakeResize(int64(w), int64(h)))
+	i.width, i.height = w, h
 	i.predictor.Reset()
-	// need to update i.width, i.height, or is it reflected back when acting on the emulator?
 }
 
 // CurrentContents produces a "patch" that transforms a fresh/reset terminal to one that matches the current display
@@ -431,7 +432,6 @@ func (i *Interposer) Resize(w, h int) {
 // the parameter.
 func (i *Interposer) CurrentContents(noPrediction bool) string {
 	i.emulatorMutex.Lock()
-	width, height := i.width, i.height
 	fb := i.emulator.GetFramebuffer()
 	if !noPrediction {
 		// copy it so we can apply predictor changes
@@ -443,7 +443,8 @@ func (i *Interposer) CurrentContents(noPrediction bool) string {
 		i.predictor.Cull(fb)
 		i.predictor.Apply(fb)
 	}
-	blank := terminal.MakeFramebuffer(width, height)
+	blank := terminal.MakeFramebuffer(i.width, i.height)
 
-	return i.display.NewFrame(false, blank, fb)
+	initSize := fmt.Sprintf("\033[8;%d;%dt", i.height, i.width)
+	return initSize + i.display.NewFrame(false, blank, fb)
 }
