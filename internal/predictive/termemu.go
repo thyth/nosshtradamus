@@ -227,6 +227,7 @@ func (i *Interposer) Inject(data []byte) error {
 	defer i.emulatorMutex.Unlock()
 	i.resize(width, height)
 	_ = i.emulator.Perform(string(data))
+	i.localState = terminal.CopyFramebuffer(i.emulator.GetFramebuffer())
 	return nil
 }
 

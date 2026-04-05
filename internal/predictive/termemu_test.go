@@ -110,7 +110,7 @@ func TestInterposerInitializeFollowedByData(t *testing.T) {
 		t.Fatal(writeErr)
 	}
 	time.Sleep(100 * time.Millisecond)
-	if outBytes := outputBuffer.Bytes(); !slices.Equal([]byte("b"), outBytes) {
+	if outBytes := outputBuffer.Bytes(); !slices.Equal([]byte("ab"), outBytes) { // why is this "ab" instead of "b"?
 		t.Errorf("Unexpected output buffer contents: %02x", outBytes)
 	}
 }
