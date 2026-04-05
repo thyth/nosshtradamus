@@ -402,7 +402,9 @@ func main() {
 								interposer.CloseEpoch(epoch, openedAt)
 							}, options)
 							if exogenousState != nil {
-								interposer.Inject(exogenousState)
+								if injectErr := interposer.Inject(exogenousState); injectErr != nil {
+									logger.Debug("injection", "error", injectErr)
+								}
 							}
 							interposedRwc = interposer
 						}
