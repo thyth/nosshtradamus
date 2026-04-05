@@ -40,8 +40,9 @@ build:
     # Once go-mosh is properly prepared, we can do a mostly ordinary go build invocation.
     # Using the 'netgo' build tag to reduce dynamic linking requirement on specific glibc.
     - go build -tags netgo ./cmd/nosshtradamus
-    # Run unit tests after build; these tests require a completed mosh build.
-    - go test -v ./...
+    # Run unit tests after build; these tests require a completed mosh build. The TERM value must be set to something
+    # reasonable, since mosh reads the Terminfo database at runtime.
+    - TERM=xterm-256color go test -v ./...
   artifacts:
     paths:
       - nosshtradamus
